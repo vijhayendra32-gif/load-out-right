@@ -1,0 +1,2378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Goods Outflow — Load-Out Control (v8.0)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EEF1F3;
+    --surface:#FFFFFF;
+    --ink:#12181F;
+    --ink-soft:#5B6672;
+    --line:#D7DCE1;
+    --accent:#28496B;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#E4EBF1;
+    --success:#1C7A46;
+    --success-soft:#E4F3EA;
+    --danger:#C22A2A;
+    --danger-soft:#FBE7E7;
+    --warning:#B4720E;
+    --warning-soft:#FBF0DD;
+    --radius:10px;
+    --shadow: 0 1px 2px rgba(18,24,31,0.06), 0 6px 20px rgba(18,24,31,0.05);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:64px;
+  }
+  h1,h2,h3,.display{
+    font-family:'Barlow Semi Condensed',sans-serif;
+    font-weight:800;
+    letter-spacing:0.01em;
+    margin:0;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace; font-weight:600; letter-spacing:0.01em;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+
+  /* ---- Login gate ---- */
+  .login-gate{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; background:var(--bg); gap:16px;
+  }
+  .firebase-setup-banner{
+    max-width:420px; width:100%; background:var(--warning-soft); color:var(--warning);
+    border:1px solid var(--warning); border-radius:10px; padding:12px 16px; font-size:12.5px; font-weight:600; line-height:1.5;
+  }
+  .login-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:32px 28px; max-width:360px; width:100%; box-shadow:var(--shadow); text-align:left;
+  }
+  .login-brand{ font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); font-weight:700; margin-bottom:4px; }
+  .login-card h2{ font-size:22px; margin-bottom:6px; }
+  .login-card .subtext{ margin-bottom:16px; }
+  .login-card input{ text-align:center; font-family:'IBM Plex Mono',monospace; font-size:18px; letter-spacing:0.05em; text-transform:uppercase; }
+  .login-error{ color:var(--danger); font-size:13px; font-weight:600; margin-top:10px; min-height:18px; }
+
+  /* ---- App shell ---- */
+  header.appbar{
+    background:var(--ink);
+    color:#fff;
+    padding:14px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    position:sticky; top:0; z-index:30;
+  }
+  header.appbar .brand{display:flex; flex-direction:column; line-height:1.05;}
+  header.appbar .brand .eyebrow{
+    font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#9FB0BF; font-weight:600;
+  }
+  header.appbar .brand .eyebrow .version-tag{
+    display:inline-block; margin-left:6px; padding:1px 6px; border-radius:4px;
+    background:rgba(255,255,255,0.12); color:#C9D4DC; font-size:10px; letter-spacing:0.04em;
+  }
+  .user-badge{ font-size:11px; color:#C9D4DC; background:rgba(255,255,255,0.1); padding:4px 9px; border-radius:6px; }
+  .switch-user-btn{ border:1px solid rgba(255,255,255,0.25); background:transparent; color:#C9D4DC; font-size:11px; padding:5px 10px; border-radius:6px; cursor:pointer; }
+  header.appbar .brand .title{
+    font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:22px;
+  }
+  header.appbar .today{font-family:'IBM Plex Mono',monospace; font-size:12px; color:#C9D4DC;}
+
+  nav.tabs{
+    display:flex; gap:4px; background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:6px 12px; overflow-x:auto;
+    position:sticky; top:58px; z-index:29;
+  }
+  nav.tabs button{
+    border:none; background:transparent; color:var(--ink-soft);
+    padding:10px 14px; border-radius:8px; font-size:14px; font-weight:600;
+    cursor:pointer; white-space:nowrap;
+  }
+  nav.tabs button.active{ background:var(--accent-soft); color:var(--accent); }
+  nav.tabs button:focus-visible, button:focus-visible, input:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px;
+  }
+
+  main{ max-width:960px; margin:0 auto; padding:18px 16px 40px; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .card h2{ font-size:20px; margin-bottom:4px; }
+  .subtext{ color:var(--ink-soft); font-size:13.5px; margin-bottom:14px; }
+
+  label.field{ display:block; margin-bottom:14px; }
+  label.field .lbl{ display:block; font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); margin-bottom:6px; }
+  input[type=date], input[type=text], input[type=file], input[type=time], select{
+    width:100%; border:1.5px solid var(--line); border-radius:8px; padding:11px 12px;
+    font-size:15px; font-family:'Inter',sans-serif; background:#fff; color:var(--ink);
+  }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border:none; border-radius:8px; padding:12px 18px; font-size:14.5px; font-weight:700;
+    cursor:pointer; min-height:44px;
+  }
+  .btn-primary{ background:var(--accent); color:#fff; }
+  .btn-primary:disabled{ background:#A9B6C1; cursor:not-allowed; }
+  .btn-ghost{ background:var(--accent-soft); color:var(--accent); }
+  .status-filter-btn.active[data-status=""]{ background:var(--ink); color:#fff; }
+  .status-filter-btn.active[data-status="pending"]{ background:var(--warning); color:#fff; }
+  .status-filter-btn.active[data-status="in-transit"]{ background:var(--accent); color:#fff; }
+  .status-filter-btn.active[data-status="delivered"]{ background:var(--success); color:#fff; }
+  .btn-danger{ background:var(--danger); color:#fff; }
+  .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
+  .badge{ display:inline-flex; align-items:center; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:700; }
+  .badge.pending{ background:var(--warning-soft); color:var(--warning); }
+  .badge.in-transit{ background:var(--accent-soft); color:var(--accent); }
+  .badge.delivered{ background:var(--success-soft); color:var(--success); }
+
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); padding:8px 8px; border-bottom:1.5px solid var(--line); }
+  td{ padding:9px 8px; border-bottom:1px solid var(--line); }
+  tr:last-child td{ border-bottom:none; }
+
+  .zone-card{ border:1.5px solid var(--line); border-radius:var(--radius); margin-bottom:14px; overflow:hidden; }
+  .zone-card .zone-head{
+    background:var(--ink); color:#fff; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:12px;
+  }
+  .zone-card .zone-head .zid{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:22px; }
+  .zone-card .zone-head .did{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:#C9D4DC; }
+  .zone-card .zone-body{ padding:14px 16px; }
+  .zone-card .meta-row{ display:flex; gap:18px; margin-bottom:10px; font-size:13px; color:var(--ink-soft); }
+  .zone-card .meta-row b{ color:var(--ink); }
+
+  .qr-box{ display:flex; align-items:center; justify-content:center; background:#fff; padding:4px; border-radius:4px; flex-shrink:0; }
+
+  /* Printable ZQR form — mirrors the real IKEA Zone QR & Driver Handout Form */
+  .zqr-print{ background:#fff; padding:22px; border:1px solid #bbb; color:#111; font-family:'Inter',sans-serif; }
+  .zqr-topbar{ display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #111; padding-bottom:10px; margin-bottom:14px; }
+  .zqr-topbar b{ font-size:19px; }
+  .zqr-topbar span{ display:block; font-size:10.5px; color:#555; margin-top:2px; }
+  .zqr-formtitle{ text-align:right; }
+  .zqr-formtitle b{ font-size:14px; }
+  .zqr-infobar{ display:flex; justify-content:space-between; align-items:center; border:1px solid #999; border-radius:4px; padding:14px 16px; margin-bottom:16px; gap:18px; }
+  .zqr-infogrid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 30px; flex:1; }
+  .zqr-infogrid label{ display:block; font-size:9.5px; letter-spacing:.05em; color:#666; font-weight:700; }
+  .zqr-infogrid .val{ font-size:15px; font-weight:700; margin-top:2px; font-family:'IBM Plex Mono',monospace; min-height:18px; }
+  .zqr-qrbox{ text-align:center; flex-shrink:0; }
+  .zqr-qrbox span{ display:block; font-size:9px; font-weight:700; letter-spacing:.04em; margin-top:4px; color:#333; }
+  .zqr-qrbox span.zqr-code-label{ font-size:12px; font-weight:700; letter-spacing:.03em; margin-top:6px; color:#111; }
+  .zqr-section-label{ font-size:12.5px; font-weight:800; letter-spacing:.02em; border-top:2px solid #111; padding-top:6px; margin:14px 0 8px; }
+  table.zqr-table{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:6px; }
+  table.zqr-table th, table.zqr-table td{ border:1px solid #999; padding:6px 8px; text-align:left; }
+  table.zqr-table tr.row-shaded td{ background:#E4E6E9; }
+  table.zqr-table th{ background:#f2f2f2; font-size:10.5px; text-transform:uppercase; letter-spacing:.02em; }
+  table.zqr-table td.center, table.zqr-table th.center{ text-align:center; }
+  .zqr-confirm-text{ font-size:11.5px; color:#333; margin-bottom:12px; }
+  .zqr-signoff-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:16px; }
+  .zqr-signoff-grid label{ display:block; font-size:9.5px; font-weight:700; letter-spacing:.04em; color:#666; margin-bottom:22px; }
+  .zqr-signoff-grid .line{ border-top:1px solid #333; }
+  .zqr-footer{ text-align:center; font-size:10px; color:#777; border-top:1px solid #ccc; padding-top:8px; }
+
+  .empty{ text-align:center; padding:40px 16px; color:var(--ink-soft); }
+  .empty .display{ font-size:19px; color:var(--ink); margin-bottom:6px; }
+
+  /* Scan view */
+  .scan-stage{
+    border:2px dashed var(--line); border-radius:14px; padding:26px 18px; text-align:center; margin-bottom:16px;
+  }
+  .scan-stage.step-a{ border-color:#9FB0BF; }
+  .scan-stage.step-b.match{ border-color:var(--success); background:var(--success-soft); }
+  .scan-stage.step-b.mismatch{ border-color:var(--danger); background:var(--danger-soft); }
+  .scan-result-big{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:30px; margin:6px 0; }
+  .manual-zqr-row{ display:flex; gap:8px; max-width:420px; margin:0 auto; }
+  .manual-zqr-row input{ flex:1; border:1.5px solid var(--line); border-radius:8px; padding:10px 12px; font-size:14px; font-family:'IBM Plex Mono',monospace; }
+  .manual-zqr-row .btn{ min-height:auto; padding:10px 16px; }
+  .scan-order-no{ font-size:16px; font-weight:600; color:var(--ink-soft); margin:2px 0 12px; letter-spacing:.02em; }
+  .scan-zone-driver{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .zd-chip{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:26px; padding:6px 16px; border-radius:8px; line-height:1.15; }
+  .zd-chip.zone{ background:var(--accent); color:#fff; }
+  .zd-chip.driver{ background:var(--success); color:#fff; }
+  .scan-flash-prompt{
+    font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:22px;
+    color:var(--danger); text-transform:uppercase; letter-spacing:0.03em; text-align:center;
+    animation: scan-flash 0.5s steps(1) infinite;
+  }
+  @keyframes scan-flash{
+    0%, 49%{ opacity:1; }
+    50%, 100%{ opacity:0; }
+  }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:11px 18px; border-radius:999px; font-size:13.5px;
+    box-shadow:var(--shadow); z-index:100; opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .toast.show{ opacity:1; }
+
+  /* Modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(18,24,31,0.55); display:none; align-items:flex-start; justify-content:center;
+    padding:24px 12px; z-index:200; overflow-y:auto;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal{ background:#fff; border-radius:12px; max-width:520px; width:100%; padding:0; overflow:hidden; }
+  .modal.pdf-modal{ max-width:900px; max-height:88vh; display:flex; flex-direction:column; }
+  .modal.pdf-modal .modal-body{ flex:1; overflow-y:auto; padding:0; }
+  .pdf-saved-banner{ background:var(--success-soft); color:var(--success); font-size:13.5px; font-weight:600; padding:12px 20px; border-bottom:1px solid var(--line); }
+  .pdf-preview-area{ padding:20px; background:#e7eaed; }
+  .pdf-preview-area .zqr-print{ margin-bottom:16px; max-width:760px; margin-left:auto; margin-right:auto; }
+  .modal-head{ display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); }
+  .modal-head button{ border:none; background:none; font-size:20px; cursor:pointer; color:var(--ink-soft); }
+  .modal-body{ padding:18px; max-height:70vh; overflow-y:auto; }
+
+  /* Printable form styling (also used inside preview modal) */
+  @media print{
+    body *{ visibility:hidden; }
+    #printArea, #printArea *{ visibility:visible; }
+    #printArea{ display:block !important; position:absolute; top:0; left:0; width:100%; }
+    .zqr-print{ border:none; page-break-after:always; }
+  }
+
+  /* Report */
+  table.report-auto-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  table.report-auto-table th{ text-align:left; padding:9px 4px; border-bottom:1px solid var(--line); font-weight:600; color:var(--ink); font-size:13.5px; }
+  table.report-auto-table td{ text-align:right; padding:9px 4px; border-bottom:1px solid var(--line); font-weight:700; }
+  table.report-auto-table tr:last-child th, table.report-auto-table tr:last-child td{ border-bottom:none; }
+  .report-sub{ font-weight:400; color:var(--ink-soft); font-size:12px; text-transform:none; letter-spacing:0; }
+  .failed-order-chip{ display:inline-flex; align-items:center; background:var(--danger-soft); color:var(--danger); font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; padding:5px 10px; border-radius:6px; margin:3px 6px 3px 0; }
+  .zone-assign-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .zone-assign-row:last-child{ border-bottom:none; }
+  .zone-assign-driver{ font-weight:700; font-size:14px; }
+  .zone-assign-select{ width:auto; min-width:140px; padding:8px 10px; font-size:14px; }
+  .zone-assign-select.unassigned{ border-color:var(--warning); background:var(--warning-soft); }
+  .report-issues-box{ border:1px solid #999; border-radius:4px; padding:10px 12px; font-size:13px; color:#222; min-height:24px; }
+
+  /* Dashboard */
+  .dash-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .dash-stat{ border-radius:10px; padding:16px 14px; text-align:center; border:1.5px solid var(--line); }
+  .dash-stat-num{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:800; font-size:34px; line-height:1; }
+  .dash-stat-label{ font-size:13px; font-weight:700; margin-top:6px; text-transform:uppercase; letter-spacing:.04em; }
+  .dash-stat-sub{ font-size:11.5px; color:var(--ink-soft); margin-top:4px; }
+  .dash-stat.pending{ background:var(--warning-soft); }
+  .dash-stat.pending .dash-stat-num, .dash-stat.pending .dash-stat-label{ color:var(--warning); }
+  .dash-stat.in-transit{ background:var(--accent-soft); }
+  .dash-stat.in-transit .dash-stat-num, .dash-stat.in-transit .dash-stat-label{ color:var(--accent); }
+  .dash-stat.delivered{ background:var(--success-soft); }
+  .dash-stat.delivered .dash-stat-num, .dash-stat.delivered .dash-stat-label{ color:var(--success); }
+  .dash-bar-row{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .dash-bar-label{ width:90px; font-size:12.5px; font-weight:700; color:var(--ink-soft); flex-shrink:0; }
+  .dash-bar-track{ flex:1; background:var(--bg); border-radius:6px; height:22px; overflow:hidden; }
+  .dash-bar-fill{ height:100%; border-radius:6px; transition:width .4s ease; }
+  .dash-bar-fill.pending{ background:var(--warning); }
+  .dash-bar-fill.in-transit{ background:var(--accent); }
+  .dash-bar-fill.delivered{ background:var(--success); }
+  .dash-bar-count{ width:36px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:13px; flex-shrink:0; }
+  .dash-delivery-times{ display:flex; gap:12px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+  .dash-delivery-time{ flex:1; background:var(--bg); border-radius:8px; padding:12px 14px; }
+  .dash-delivery-time .lbl{ display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin-bottom:4px; }
+  .dash-delivery-time .val{ font-size:16px; font-weight:600; }
+  .driver-row{ margin-bottom:16px; }
+  .driver-row:last-child{ margin-bottom:0; }
+  .driver-row-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; font-size:13px; }
+  .driver-row-head .driver-id{ font-weight:700; font-size:14px; }
+  .driver-row-head .driver-pct{ color:var(--ink-soft); }
+  .driver-status{ margin-left:auto; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700; }
+  .driver-status.ontime{ background:var(--success-soft); color:var(--success); }
+  .driver-status.pending{ background:var(--bg); color:var(--ink-soft); }
+  .driver-status.late{ background:var(--danger-soft); color:var(--danger); }
+  .driver-status.failed{ background:var(--danger); color:#fff; }
+  .driver-bar-track{ display:flex; height:22px; border-radius:6px; overflow:hidden; background:var(--bg); position:relative; }
+  .driver-bar-seg{ height:100%; transition:width .4s ease; }
+  .driver-bar-seg.pending{ background:var(--warning); }
+  .driver-bar-seg.in-transit{ background:var(--accent); }
+  .driver-bar-seg.delivered{ background:var(--success); }
+  .driver-bar-seg.failed{ background:var(--danger); background-image:repeating-linear-gradient(45deg, rgba(255,255,255,0.25) 0, rgba(255,255,255,0.25) 4px, transparent 4px, transparent 8px); }
+  .driver-bar-track.overdue{ box-shadow: inset 0 0 0 2px var(--danger); }
+
+  @media (max-width:600px){
+    header.appbar .today{ display:none; }
+    .zone-card .meta-row{ flex-wrap:wrap; gap:8px 18px; }
+    .dash-stats{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN GATE -->
+<div id="loginGate" class="login-gate">
+  <div id="firebaseSetupBanner" class="firebase-setup-banner" style="display:none;">
+    ⚠️ Firebase isn't set up yet, so this device is running standalone (its own data only, not shared with other devices). Edit FIREBASE_CONFIG near the top of this file's &lt;script&gt; section, then re-share the file.
+  </div>
+  <div class="login-card" id="storeCodeCard">
+    <div class="login-brand">IKEA — Goods Outflow</div>
+    <h2>Enter Store Code</h2>
+    <div class="subtext">This sets up (or opens) this store's own data on this device.</div>
+    <input type="text" id="storeCodeInput" placeholder="e.g. 557" autocomplete="off" inputmode="numeric"/>
+    <button class="btn btn-primary" id="storeCodeSubmit" style="width:100%; margin-top:10px;">Continue</button>
+    <div id="storeCodeError" class="login-error"></div>
+  </div>
+
+  <div class="login-card" id="userCodeCard" style="display:none;">
+    <div class="login-brand">IKEA — Goods Outflow</div>
+    <h2>Enter User Code</h2>
+    <div class="subtext" id="userCodeStoreLine"></div>
+    <input type="text" id="userCodeInput" placeholder="e.g. M01 or CW01" autocomplete="off"/>
+    <button class="btn btn-primary" id="userCodeSubmit" style="width:100%; margin-top:10px;">Log In</button>
+    <div id="userCodeError" class="login-error"></div>
+    <button class="btn btn-ghost" id="changeStoreBtn" style="width:100%; margin-top:8px;">Change store</button>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+
+<header class="appbar">
+  <div class="brand">
+    <span class="eyebrow">Goods Outflow <span class="version-tag">v8.0</span></span>
+    <span class="title">Load-Out Control</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span class="today mono" id="todayLabel"></span>
+    <span class="user-badge mono" id="userBadge"></span>
+    <button id="logoutBtn" class="switch-user-btn" title="Log out">Log out</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="upload">Upload</button>
+  <button data-view="forms">ZQR Forms</button>
+  <button data-view="scan">Scan</button>
+  <button data-view="search">Records</button>
+  <button data-view="report">Report</button>
+  <button data-view="activity" id="activityTabBtn" style="display:none;">Activity Log</button>
+</nav>
+
+<main>
+
+  <!-- DASHBOARD VIEW -->
+  <section class="view active" id="view-dashboard">
+    <div class="card">
+      <h2>Live status</h2>
+      <div class="subtext">Updates automatically. Defaults to today — pick another date to see that day instead.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="dashDate"/>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="dash-stats">
+        <div class="dash-stat pending">
+          <div class="dash-stat-num" id="dashPendingNum">0</div>
+          <div class="dash-stat-label">Pending</div>
+          <div class="dash-stat-sub">Not yet scanned</div>
+        </div>
+        <div class="dash-stat in-transit">
+          <div class="dash-stat-num" id="dashTransitNum">0</div>
+          <div class="dash-stat-label">In Transit</div>
+          <div class="dash-stat-sub">First scan done, heading to zone</div>
+        </div>
+        <div class="dash-stat delivered">
+          <div class="dash-stat-num" id="dashDeliveredNum">0</div>
+          <div class="dash-stat-label">Delivered</div>
+          <div class="dash-stat-sub">ZQR confirmed at zone</div>
+        </div>
+      </div>
+      <div id="dashChart" style="margin-top:20px;"></div>
+      <div id="dashDeliveryTimes" class="dash-delivery-times" style="display:none;">
+        <div class="dash-delivery-time"><span class="lbl">First Delivered</span><span class="val mono" id="dashFirstDelivered">—</span></div>
+        <div class="dash-delivery-time"><span class="lbl">Last Delivered</span><span class="val mono" id="dashLastDelivered">—</span></div>
+      </div>
+      <div class="subtext" id="dashEmpty" style="display:none; text-align:center; padding:20px 0;">No orders uploaded for this date yet.</div>
+    </div>
+
+    <div class="card" id="dashDriverCard" style="display:none;">
+      <h2>Driver progress</h2>
+      <div class="subtext">Target: all deliveries complete by 07:00. Bars past the line show minutes over.</div>
+      <div id="dashDriverProgress"></div>
+    </div>
+  </section>
+
+  <!-- UPLOAD VIEW -->
+  <section class="view" id="view-upload">
+    <div class="card">
+      <h2>Upload today's order file</h2>
+      <div class="subtext">Upload the Excel export for a day. Uploading again for the same date replaces that day's data — other days are kept for 1 month, then automatically removed.</div>
+      <label class="field">
+        <span class="lbl">Date</span>
+        <input type="date" id="uploadDate"/>
+      </label>
+      <label class="field">
+        <span class="lbl">Excel file (.xlsx / .csv)</span>
+        <input type="file" id="uploadFile" accept=".xlsx,.xls,.csv"/>
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="processBtn">Process file</button>
+      </div>
+      <div id="uploadStatus" style="margin-top:14px; font-size:13.5px;"></div>
+    </div>
+
+    <div class="card" id="uploadPreviewCard" style="display:none;">
+      <h2>Upload summary</h2>
+      <div class="subtext" id="uploadSummaryText"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="printAllBtn">Print all ZQR forms</button>
+        <button class="btn btn-ghost" id="goToFormsBtn">View ZQR forms</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Clear data</h2>
+      <div class="subtext">Permanently deletes all uploaded records, ZQR forms, and scan progress for the date selected above. This cannot be undone.</div>
+      <div class="btn-row">
+        <button class="btn btn-danger" id="clearDateBtn">Clear data for this date</button>
+      </div>
+      <div id="clearDateStatus" style="margin-top:12px; font-size:13.5px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Zone assignment</h2>
+      <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
+      <div id="zoneAssignBox"></div>
+    </div>
+  </section>
+
+  <!-- FORMS VIEW -->
+  <section class="view" id="view-forms">
+    <div class="card">
+      <h2>ZQR handout forms</h2>
+      <div class="subtext">Grouped by Zone/Bay + Driver. Each form covers one zone/driver combination.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="formsDate"/>
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="viewAllFormsPdf(document.getElementById('formsDate').value)">View all as PDF</button>
+      </div>
+    </div>
+    <div id="formsList"></div>
+  </section>
+
+  <!-- SCAN VIEW -->
+  <section class="view" id="view-scan">
+    <div class="card">
+      <h2>Scan &amp; confirm delivery</h2>
+      <div class="subtext">Step 1 — scan the Order No. Step 2 — scan the ZQR at the zone to confirm.</div>
+
+      <label class="field">
+        <span class="lbl">Scanner input</span>
+        <input type="text" id="scanInput" placeholder="Scan or type a code, then press Enter" autocomplete="off"/>
+      </label>
+      <div class="btn-row" style="margin-bottom:16px;">
+        <button class="btn btn-ghost" id="resetScanBtn">Reset</button>
+      </div>
+
+      <div class="scan-stage step-a" id="stageA"></div>
+
+      <div id="stageBWrap"></div>
+    </div>
+  </section>
+
+  <!-- SEARCH VIEW -->
+  <section class="view" id="view-search">
+    <div class="card">
+      <h2>Records</h2>
+      <div class="subtext">Records are exclusive to one date at a time — pick the date you want to view below.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="recordsDate"/>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Look up by Order No.</h2>
+      <div class="subtext">Type an Order No. — matching details for the date above appear instantly.</div>
+      <label class="field">
+        <span class="lbl">Order No.</span>
+        <input type="text" id="fOrderNoLive" placeholder="e.g. 100234" autocomplete="off"/>
+      </label>
+      <div id="liveOrderResult"></div>
+    </div>
+    <div class="card">
+      <h2>Search delivered &amp; pending records</h2>
+      <div class="subtext">Filters apply within the date selected above.</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 14px;">
+        <label class="field"><span class="lbl">Suburb</span><input type="text" id="fSuburb"/></label>
+        <label class="field"><span class="lbl">Driver No.</span><input type="text" id="fDriver"/></label>
+        <label class="field"><span class="lbl">Zone</span><input type="text" id="fZone"/></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="searchBtn">Search</button>
+        <button class="btn btn-ghost" id="clearSearchBtn">Clear</button>
+      </div>
+      <div class="btn-row" id="statusFilterRow" style="margin-top:10px; border-top:1px solid var(--line); padding-top:12px;">
+        <button class="btn btn-ghost status-filter-btn" data-status="" id="statusAllBtn">All statuses</button>
+        <button class="btn btn-ghost status-filter-btn" data-status="pending" id="statusPendingBtn">Pending</button>
+        <button class="btn btn-ghost status-filter-btn" data-status="in-transit" id="statusTransitBtn">In Transit</button>
+        <button class="btn btn-ghost status-filter-btn" data-status="delivered" id="statusDeliveredBtn">Delivered</button>
+      </div>
+    </div>
+    <div class="card">
+      <div id="searchResults"></div>
+    </div>
+  </section>
+
+  <!-- REPORT VIEW -->
+  <section class="view" id="view-report">
+    <div class="card">
+      <h2>Daily Load-Out Report</h2>
+      <div class="subtext">Manual fields save automatically as you fill them in. Auto-generated figures, failed deliveries, and external returns appear on the full report — use View / Print Report below.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="reportDate"/>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Manual entry</h2>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 14px;">
+        <label class="field"><span class="lbl">Controller</span><input type="text" id="repController" placeholder="Name"/></label>
+        <label class="field"><span class="lbl">Load Out Hours</span>
+          <select id="repHours">
+            <option value="">Select…</option>
+          </select>
+        </label>
+        <label class="field"><span class="lbl">Last Vehicle Left</span><input type="time" id="repLastVehicle"/></label>
+        <label class="field"><span class="lbl">Tent Check</span>
+          <select id="repTent"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </label>
+        <label class="field"><span class="lbl">TMP Check</span>
+          <select id="repTmp"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </label>
+        <label class="field"><span class="lbl">Zone Clear</span>
+          <select id="repTrolleys"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </label>
+        <label class="field"><span class="lbl">ANC Supervisor Present</span>
+          <select id="repAnc"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </label>
+      </div>
+      <div id="reportSaveStatus" class="subtext" style="margin-top:2px;">&nbsp;</div>
+    </div>
+
+    <div class="card">
+      <h2>Other Issues</h2>
+      <div class="subtext">Anything else worth noting for this date — saves automatically.</div>
+      <label class="field">
+        <textarea id="repOtherIssues" rows="4" placeholder="Type any other issues here…" style="width:100%; border:1.5px solid var(--line); border-radius:8px; padding:11px 12px; font-size:15px; font-family:'Inter',sans-serif; color:var(--ink); resize:vertical;"></textarea>
+      </label>
+    </div>
+
+    <!-- Auto-generated figures, failed delivery, and external returns are computed live in the
+         background but hidden from this editing page — they only appear on the generated
+         one-page report (View / Print Report below), per spec. -->
+    <div style="display:none;">
+      <span id="repVans"></span><span id="repTrucks"></span><span id="repTotalOrders"></span>
+      <span id="repFirstDelivery"></span><span id="repLastDelivery"></span><span id="repFailedList"></span>
+    </div>
+
+    <div class="card">
+      <h2>Generate report</h2>
+      <div class="subtext">One page combining manual entries, auto-generated figures, failed deliveries, and external returns for the date above.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="viewReportBtn">View / Print Report</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVITY LOG VIEW (M01 / TL01 only) -->
+  <section class="view" id="view-activity">
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="subtext">Login and logout times for every user code, most recent first.</div>
+      <div id="activityLogList"></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- Preview / print modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="modalTitle">ZQR Form</strong>
+      <button id="modalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<!-- PDF viewer modal -->
+<div class="modal-overlay" id="pdfModalOverlay">
+  <div class="modal pdf-modal">
+    <div class="modal-head">
+      <strong id="pdfModalTitle">ZQR PDF</strong>
+      <div class="btn-row" style="gap:8px;">
+        <button class="btn btn-primary" id="pdfDownloadBtn" style="min-height:34px;padding:8px 14px;">Download PDF</button>
+        <button id="pdfModalClose" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-soft);">&times;</button>
+      </div>
+    </div>
+    <div class="modal-body pdf-modal-body" id="pdfModalBody">
+      <div id="pdfSavedBanner" class="pdf-saved-banner"></div>
+      <div id="pdfPreviewArea" class="pdf-preview-area"></div>
+    </div>
+  </div>
+</div>
+
+<div id="printArea" style="display:none;"></div>
+
+</div><!-- /#appShell -->
+
+<script>
+/* ============================= STORAGE HELPERS =============================
+   Shared app data (uploads, ZQR forms, scans, reports, activity log) is now
+   stored in Firebase Realtime Database, so every device — phones, tablets,
+   laptops — reads and writes the SAME data across the internet. This is what
+   makes multiple people's scans update one manager's Dashboard in near-real
+   time (the app already polls every few seconds; that poll now hits Firebase).
+
+   ⚠️ SETUP REQUIRED — replace FIREBASE_CONFIG below with your own Firebase
+   project's config before this will work. Steps:
+   1. Go to https://console.firebase.google.com → Add project (free).
+   2. In the project, click </> (Web app) to register a web app — no need to
+      check "Firebase Hosting".
+   3. Copy the firebaseConfig object it shows you and paste it in below.
+   4. In the left sidebar go to Build → Realtime Database → Create Database.
+      Choose a location, then start in "Test mode" for this pilot (open
+      read/write for 30 days — fine for a short internal trial; tighten the
+      rules before any longer-term/production use).
+   5. Re-save this file (or just edit the object below) with your real values,
+      then re-share it with your 5 testers — they all need the SAME config so
+      they're all talking to the SAME database.
+
+   The device's own login (which store/user code is currently signed in on
+   THIS device) is intentionally kept in this browser's own localStorage,
+   never Firebase — otherwise one phone logging in would log every device in. */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDq_z9hDttmvYKoumj9ILKAtsvg7t4bn58",
+  authDomain: "goods-outflow.firebaseapp.com",
+  databaseURL: "https://goods-outflow-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "goods-outflow",
+  storageBucket: "goods-outflow.firebasestorage.app",
+  messagingSenderId: "898077162513",
+  appId: "1:898077162513:web:04580a6d4cc1dba01405b0"
+};
+
+let fbDatabase = null;
+let fbReady = false;
+try{
+  const configComplete = Object.values(FIREBASE_CONFIG).every(v => typeof v==='string' && v.indexOf('REPLACE_ME')===-1);
+  if(configComplete && window.firebase){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fbDatabase = firebase.database();
+    fbReady = true;
+  }
+}catch(e){ console.error('Firebase init failed', e); }
+
+function fbSafeKey(key){
+  // Realtime Database path segments can't contain . # $ [ ]
+  return String(key).replace(/[.#$\[\]]/g, '_');
+}
+
+/* ---- Local-only (per-device) storage: login session ONLY, never app data ---- */
+const STORAGE_PREFIX = 'loadoutApp:';
+async function localGet(key){
+  try{ return localStorage.getItem(STORAGE_PREFIX + key); }
+  catch(e){ console.error('local storage get failed', e); return null; }
+}
+async function localSet(key, value){
+  try{ localStorage.setItem(STORAGE_PREFIX + key, value); return true; }
+  catch(e){ console.error('local storage set failed', e); return false; }
+}
+async function localDelete(key){
+  try{ localStorage.removeItem(STORAGE_PREFIX + key); return true; }
+  catch(e){ console.error('local storage delete failed', e); return false; }
+}
+
+/* ---- Shared (Firebase-backed) storage: all real app data, synced across every device ---- */
+let currentStoreCode = null;
+let currentUserCode = null;
+let currentUserRole = null; // 'manager' | 'coworker'
+function storeKey(suffix){
+  return 'loadout:'+currentStoreCode+':'+suffix;
+}
+
+async function storeGet(key){
+  if(!fbReady) return localGet(key);
+  try{
+    const snap = await fbDatabase.ref(fbSafeKey(key)).get();
+    return snap.exists() ? snap.val() : null;
+  }catch(e){ console.error('storage get failed', e); return null; }
+}
+async function storeSet(key, value){
+  if(!fbReady) return localSet(key, value);
+  try{ await fbDatabase.ref(fbSafeKey(key)).set(value); return true; }
+  catch(e){ console.error('storage set failed', e); return false; }
+}
+async function storeDelete(key){
+  if(!fbReady) return localDelete(key);
+  try{ await fbDatabase.ref(fbSafeKey(key)).remove(); return true; }
+  catch(e){ console.error('storage delete failed', e); return false; }
+}
+
+async function loadDatesIndex(){
+  const raw = await storeGet(storeKey('dates'));
+  if(!raw) return [];
+  try{ return JSON.parse(raw); }catch(e){ return []; }
+}
+async function saveDatesIndex(list){
+  await storeSet(storeKey('dates'), JSON.stringify(list));
+}
+async function addDateToIndex(date){
+  const list = await loadDatesIndex();
+  if(!list.includes(date)){
+    list.push(date);
+    list.sort().reverse();
+    await saveDatesIndex(list);
+  }
+}
+async function loadDay(date){
+  const raw = await storeGet(storeKey('day:'+date));
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+async function saveDay(date, dayObj){
+  await storeSet(storeKey('day:'+date), JSON.stringify(dayObj));
+}
+async function loadReportData(date){
+  const raw = await storeGet(storeKey('report:'+date));
+  if(!raw) return {};
+  try{ return JSON.parse(raw); }catch(e){ return {}; }
+}
+async function saveReportData(date, data){
+  await storeSet(storeKey('report:'+date), JSON.stringify(data));
+}
+
+/* ---- Data retention: keep only the last RETENTION_DAYS calendar days ---- */
+const RETENTION_DAYS = 30; // 1 month
+function isoDaysAgo(n){
+  const d = new Date();
+  d.setDate(d.getDate()-n);
+  const tz = d.getTimezoneOffset();
+  const local = new Date(d.getTime()-tz*60000);
+  return local.toISOString().slice(0,10);
+}
+async function cleanupOldData(){
+  const cutoff = isoDaysAgo(RETENTION_DAYS-1); // e.g. today, today-1, today-2 for RETENTION_DAYS=3
+  const dates = await loadDatesIndex();
+  const keep = [];
+  let removedAny = false;
+  for(const d of dates){
+    if(d >= cutoff){
+      keep.push(d);
+    }else{
+      await storeDelete(storeKey('day:'+d));
+      await storeDelete(storeKey('report:'+d));
+      removedAny = true;
+    }
+  }
+  if(removedAny) await saveDatesIndex(keep);
+}
+
+/* ============================= UTIL ============================= */
+function todayISO(){
+  const d = new Date();
+  const tz = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - tz*60000);
+  return local.toISOString().slice(0,10);
+}
+function formatDDMMYY(dateStr){
+  const [y,m,d] = dateStr.split('-');
+  return d+m+y.slice(2);
+}
+function buildZqrCode(zone, dateStr){
+  return zone+'-'+formatDDMMYY(dateStr);
+}
+function toast(msg, ms=2400){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>t.classList.remove('show'), ms);
+}
+function beep(freq=880, dur=180){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type='square'; osc.frequency.value=freq;
+    gain.gain.value=0.15;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(()=>{ osc.stop(); ctx.close(); }, dur);
+  }catch(e){}
+}
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function uid(){ return Math.random().toString(36).slice(2,10); }
+
+/* Header normalization for flexible Excel column matching */
+function normHeader(h){
+  return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+const HEADER_ALIASES = {
+  category: ['category','cat'],
+  orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum'],
+  driverNo: ['driverno','driver#','drivernumber','driver','drivernum'],
+  driverName: ['drivername','drivernamefull'],
+  zone: ['zone','zonebay','bay','zonebayno'],
+  suburb: ['suburb','location','suburblocation','deliverysuburb'],
+  items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount'],
+  details: ['details','detail','notes','note','description']
+};
+function detectColumns(headerRow){
+  const map = {};
+  headerRow.forEach((h, idx)=>{
+    const n = normHeader(h);
+    for(const field in HEADER_ALIASES){
+      if(HEADER_ALIASES[field].includes(n) && map[field]===undefined){
+        map[field] = idx;
+      }
+    }
+  });
+  // Priority tier 2: an explicit "item"/"items" column always wins for the items field,
+  // even if a legacy "boxes"/"qty"-style column sits earlier in the sheet.
+  headerRow.forEach((h, idx)=>{
+    const n = normHeader(h);
+    if(n==='item' || n==='items'){ map.items = idx; }
+  });
+  // Priority tier 1 (highest): an "itemNo"-style column always wins over everything else
+  // for the items field, including a plain "Item"/"Items" column, since when both exist
+  // itemNo is the one carrying the real per-order quantity.
+  headerRow.forEach((h, idx)=>{
+    const n = normHeader(h);
+    if(n==='itemno' || n==='itemnos' || n==='itemnumber' || n==='itemnum'){ map.items = idx; }
+  });
+  return map;
+}
+
+/* ============================= STATE ============================= */
+let currentScanOrder = null; // {date, orderNo, zone, driverNo, category, suburb, items}
+
+/* ============================= NAVIGATION ============================= */
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-view]');
+  if(!btn) return;
+  showView(btn.dataset.view);
+});
+let dashboardInterval = null;
+let recordsInterval = null;
+let reportInterval = null;
+let searchHasRun = false;
+function showView(name){
+  checkDateRollover();
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  if(name==='forms') renderFormsList();
+  if(name==='scan') focusScanInput();
+  if(name==='dashboard'){
+    refreshDashboard();
+    if(dashboardInterval) clearInterval(dashboardInterval);
+    dashboardInterval = setInterval(refreshDashboard, 3000);
+  }else if(dashboardInterval){
+    clearInterval(dashboardInterval);
+    dashboardInterval = null;
+  }
+  if(name==='search'){
+    liveOrderLookup();
+    if(searchHasRun) runSearch();
+    if(recordsInterval) clearInterval(recordsInterval);
+    recordsInterval = setInterval(()=>{ liveOrderLookup(); if(searchHasRun) runSearch(); }, 3000);
+  }else if(recordsInterval){
+    clearInterval(recordsInterval);
+    recordsInterval = null;
+  }
+  if(name==='report'){
+    refreshReport();
+    if(reportInterval) clearInterval(reportInterval);
+    reportInterval = setInterval(refreshReportAutoFieldsOnly, 3000);
+  }else if(reportInterval){
+    clearInterval(reportInterval);
+    reportInterval = null;
+  }
+  if(name==='activity') renderActivityLog();
+}
+
+let lastKnownToday = todayISO();
+function checkDateRollover(){
+  const freshToday = todayISO();
+  if(freshToday !== lastKnownToday){
+    // The calendar day has changed while this tab was open. Any date field
+    // still sitting on the OLD "today" should advance to the new one —
+    // fields the user deliberately set to a different/past date are left alone.
+    let uploadDateChanged = false;
+    ['dashDate','uploadDate','formsDate','recordsDate','reportDate'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el && el.value === lastKnownToday){
+        el.value = freshToday;
+        if(id==='uploadDate') uploadDateChanged = true;
+      }
+    });
+    document.getElementById('todayLabel').textContent = freshToday;
+    lastKnownToday = freshToday;
+    if(uploadDateChanged) renderZoneAssignment();
+  }
+}
+
+function isPreload(record){
+  return /^PL\d+$/i.test(String(record.zone||'').trim());
+}
+
+async function refreshDashboard(){
+  checkDateRollover();
+  const date = document.getElementById('dashDate').value || todayISO();
+  const day = await loadDay(date);
+  const dashRecords = day ? day.records.filter(r=>!isPreload(r)) : [];
+  const counts = { pending:0, 'in-transit':0, delivered:0 };
+  let total = 0;
+  if(dashRecords.length){
+    dashRecords.forEach(r=>{ if(counts[r.status]!==undefined) counts[r.status]++; });
+    total = dashRecords.length;
+  }
+  document.getElementById('dashPendingNum').textContent = counts.pending;
+  document.getElementById('dashTransitNum').textContent = counts['in-transit'];
+  document.getElementById('dashDeliveredNum').textContent = counts.delivered;
+  document.getElementById('dashEmpty').style.display = total ? 'none' : 'block';
+
+  const timesEl = document.getElementById('dashDeliveryTimes');
+  const chartEl = document.getElementById('dashChart');
+  const driverCard = document.getElementById('dashDriverCard');
+  if(!total){ chartEl.innerHTML=''; timesEl.style.display='none'; driverCard.style.display='none'; return; }
+
+  const rows = [
+    ['Pending','pending',counts.pending],
+    ['In Transit','in-transit',counts['in-transit']],
+    ['Delivered','delivered',counts.delivered]
+  ];
+  chartEl.innerHTML = rows.map(([label,cls,count])=>{
+    const pct = total ? Math.round((count/total)*100) : 0;
+    return '<div class="dash-bar-row">'
+      + '<div class="dash-bar-label">'+label+'</div>'
+      + '<div class="dash-bar-track"><div class="dash-bar-fill '+cls+'" style="width:'+pct+'%;"></div></div>'
+      + '<div class="dash-bar-count">'+count+'</div>'
+      + '</div>';
+  }).join('');
+
+  const deliveredTimes = dashRecords
+    .filter(r=>r.status==='delivered' && r.deliveredAt)
+    .map(r=>r.deliveredAt)
+    .sort();
+  if(deliveredTimes.length){
+    const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('dashFirstDelivered').textContent = fmt(deliveredTimes[0]);
+    document.getElementById('dashLastDelivered').textContent = fmt(deliveredTimes[deliveredTimes.length-1]);
+    timesEl.style.display = 'flex';
+  }else{
+    timesEl.style.display = 'none';
+  }
+
+  driverCard.style.display = 'block';
+  renderDriverProgress(date, dashRecords);
+}
+document.getElementById('dashDate').addEventListener('change', refreshDashboard);
+
+/* ---- Per-driver progress vs the 07:00 daily target ---- */
+const DAILY_TARGET_HOUR = 7; // 07:00
+const FAILED_AFTER_HOURS = 5; // orders not delivered 5h past the target are marked failed
+
+function groupByDriverOnly(records){
+  const map = {};
+  records.forEach(r=>{
+    if(!map[r.driverNo]) map[r.driverNo] = { driverNo:r.driverNo, records:[] };
+    map[r.driverNo].records.push(r);
+  });
+  return Object.values(map).sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
+}
+
+function formatHM(totalMinutes){
+  const h = Math.floor(totalMinutes/60);
+  const m = totalMinutes%60;
+  if(h <= 0) return m+'m';
+  return h+'h '+m+'m';
+}
+
+function isOrderFailed(record, date, deadline, failCutoff, isToday, now){
+  if(record.status==='delivered') return false;
+  if(!isToday) return date < todayISO(); // any past, undelivered order is failed
+  return now > failCutoff;
+}
+
+function renderDriverProgress(date, records){
+  const el = document.getElementById('dashDriverProgress');
+  const drivers = groupByDriverOnly(records);
+  const deadline = new Date(date+'T'+String(DAILY_TARGET_HOUR).padStart(2,'0')+':00:00');
+  const failCutoff = new Date(deadline.getTime() + FAILED_AFTER_HOURS*60*60000);
+  const isToday = date === todayISO();
+  const now = new Date();
+
+  el.innerHTML = drivers.map(d=>{
+    const total = d.records.length;
+    const failed = d.records.filter(r=>isOrderFailed(r, date, deadline, failCutoff, isToday, now)).length;
+    const pending = d.records.filter(r=>r.status==='pending' && !isOrderFailed(r, date, deadline, failCutoff, isToday, now)).length;
+    const transit = d.records.filter(r=>r.status==='in-transit' && !isOrderFailed(r, date, deadline, failCutoff, isToday, now)).length;
+    const delivered = d.records.filter(r=>r.status==='delivered').length;
+    const pct = total ? Math.round((delivered/total)*100) : 0;
+    const pendingPct = total ? (pending/total)*100 : 0;
+    const transitPct = total ? (transit/total)*100 : 0;
+    const deliveredPct = total ? (delivered/total)*100 : 0;
+    const failedPct = total ? (failed/total)*100 : 0;
+    const cappedMin = FAILED_AFTER_HOURS*60;
+
+    let statusHtml = '';
+    let overdue = false;
+    if(failed > 0){
+      overdue = true;
+      statusHtml = '<span class="driver-status failed">'+failed+' failed \u2014 '+formatHM(cappedMin)+'+ past 07:00</span>';
+    }else if(delivered === total && total > 0){
+      const times = d.records.filter(r=>r.deliveredAt).map(r=>r.deliveredAt).sort();
+      const lastAt = times.length ? new Date(times[times.length-1]) : null;
+      if(lastAt){
+        const diffMin = Math.round((lastAt - deadline)/60000);
+        if(diffMin > 0){
+          overdue = true;
+          statusHtml = '<span class="driver-status late">Finished '+formatHM(diffMin)+' past 07:00</span>';
+        }else{
+          statusHtml = '<span class="driver-status ontime">Finished on time</span>';
+        }
+      }else{
+        statusHtml = '<span class="driver-status ontime">Complete</span>';
+      }
+    }else if(isToday){
+      const diffMin = Math.round((now - deadline)/60000);
+      if(diffMin > 0){
+        overdue = true;
+        statusHtml = '<span class="driver-status late">'+formatHM(diffMin)+' past 07:00</span>';
+      }else{
+        statusHtml = '<span class="driver-status pending">Due in '+formatHM(-diffMin)+'</span>';
+      }
+    }else{
+      overdue = true;
+      statusHtml = '<span class="driver-status late">Incomplete</span>';
+    }
+
+    return '<div class="driver-row">'
+      + '<div class="driver-row-head"><span class="driver-id mono">Driver '+escapeHtml(d.driverNo)+'</span>'
+      + '<span class="driver-pct">'+pct+'% complete</span>'+statusHtml+'</div>'
+      + '<div class="driver-bar-track'+(overdue?' overdue':'')+'">'
+      +   (pendingPct>0 ? '<div class="driver-bar-seg pending" style="width:'+pendingPct+'%;"></div>' : '')
+      +   (transitPct>0 ? '<div class="driver-bar-seg in-transit" style="width:'+transitPct+'%;"></div>' : '')
+      +   (deliveredPct>0 ? '<div class="driver-bar-seg delivered" style="width:'+deliveredPct+'%;"></div>' : '')
+      +   (failedPct>0 ? '<div class="driver-bar-seg failed" style="width:'+failedPct+'%;"></div>' : '')
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+/* ============================= INIT ============================= */
+async function initApp(){
+  const t = todayISO();
+  document.getElementById('todayLabel').textContent = t;
+  document.getElementById('uploadDate').value = t;
+  document.getElementById('formsDate').value = t;
+  document.getElementById('recordsDate').value = t;
+  document.getElementById('dashDate').value = t;
+  document.getElementById('reportDate').value = t;
+  await cleanupOldData();
+  refreshDashboard();
+  dashboardInterval = setInterval(refreshDashboard, 3000);
+  await renderZoneAssignment();
+}
+
+/* ============================= LOGIN (store code + user code) ============================= */
+const VALID_STORE_CODES = ['557'];
+const MANAGER_CODES = ['M01','TL01','LL01'];
+const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10'];
+const MANAGER_ONLY_VIEWS = ['dashboard','upload','forms','report'];
+const ACTIVITY_LOG_CODES = ['M01','TL01']; // LL01 is a manager but does NOT get this page
+
+async function logActivity(userCode, event){
+  const raw = await storeGet(storeKey('activityLog'));
+  let log = [];
+  try{ log = raw ? JSON.parse(raw) : []; }catch(e){ log = []; }
+  log.push({ userCode, event, ts: new Date().toISOString() });
+  if(log.length > 1000) log = log.slice(log.length - 1000); // basic growth cap
+  await storeSet(storeKey('activityLog'), JSON.stringify(log));
+}
+
+async function renderActivityLog(){
+  const raw = await storeGet(storeKey('activityLog'));
+  let log = [];
+  try{ log = raw ? JSON.parse(raw) : []; }catch(e){ log = []; }
+  const box = document.getElementById('activityLogList');
+  if(!log.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">No login/logout activity recorded yet.</div>';
+    return;
+  }
+  const rows = log.slice().reverse().map(e=>{
+    const d = new Date(e.ts);
+    return '<tr><td class="mono">'+escapeHtml(e.userCode)+'</td>'
+      + '<td><span class="badge '+(e.event==='login'?'delivered':'pending')+'">'+(e.event==='login'?'Login':'Logout')+'</span></td>'
+      + '<td class="mono">'+d.toLocaleDateString()+' '+d.toLocaleTimeString()+'</td></tr>';
+  }).join('');
+  box.innerHTML = '<table><thead><tr><th>User</th><th>Event</th><th>Timestamp</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function applyRoleUI(role){
+  document.querySelectorAll('nav.tabs button[data-view]').forEach(btn=>{
+    const isManagerOnly = MANAGER_ONLY_VIEWS.includes(btn.dataset.view);
+    btn.style.display = (isManagerOnly && role==='coworker') ? 'none' : '';
+  });
+  const activityBtn = document.getElementById('activityTabBtn');
+  activityBtn.style.display = ACTIVITY_LOG_CODES.includes(currentUserCode) ? '' : 'none';
+  document.getElementById('userBadge').textContent = currentUserCode+' · '+(role==='manager' ? 'Manager' : 'Co-worker');
+  showView(role==='manager' ? 'dashboard' : 'scan');
+}
+
+function showLoginGate(stage){
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginGate').style.display = 'flex';
+  document.getElementById('storeCodeCard').style.display = stage==='store' ? 'block' : 'none';
+  document.getElementById('userCodeCard').style.display = stage==='user' ? 'block' : 'none';
+  if(stage==='user'){
+    document.getElementById('userCodeStoreLine').textContent = 'Store '+currentStoreCode;
+    document.getElementById('userCodeInput').value = '';
+    document.getElementById('userCodeError').textContent = '';
+    setTimeout(()=>document.getElementById('userCodeInput').focus(), 50);
+  }else{
+    document.getElementById('storeCodeInput').value = '';
+    document.getElementById('storeCodeError').textContent = '';
+    setTimeout(()=>document.getElementById('storeCodeInput').focus(), 50);
+  }
+}
+
+async function completeLogin(){
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('appShell').style.display = 'block';
+  await initApp();
+  await restoreInProgressScan();
+  applyRoleUI(currentUserRole);
+  if(currentScanOrder){
+    renderScanStages();
+    showView('scan');
+    toast('Resumed an in-progress scan from earlier today');
+  }
+}
+
+document.getElementById('storeCodeSubmit').addEventListener('click', async ()=>{
+  const val = document.getElementById('storeCodeInput').value.trim();
+  if(!VALID_STORE_CODES.includes(val)){
+    document.getElementById('storeCodeError').textContent = 'Unrecognised store code.';
+    return;
+  }
+  currentStoreCode = val;
+  await localSet('session:storeCode', val);
+  showLoginGate('user');
+});
+document.getElementById('storeCodeInput').addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('storeCodeSubmit').click(); }
+});
+
+document.getElementById('userCodeSubmit').addEventListener('click', async ()=>{
+  const val = document.getElementById('userCodeInput').value.trim().toUpperCase();
+  let role = null;
+  if(MANAGER_CODES.includes(val)) role = 'manager';
+  else if(COWORKER_CODES.includes(val)) role = 'coworker';
+  if(!role){
+    document.getElementById('userCodeError').textContent = 'Unrecognised user code.';
+    return;
+  }
+  currentUserCode = val;
+  currentUserRole = role;
+  await localSet('session:userCode:'+currentStoreCode, val);
+  await localSet('session:userRole:'+currentStoreCode, role);
+  await logActivity(val, 'login');
+  await completeLogin();
+});
+document.getElementById('userCodeInput').addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('userCodeSubmit').click(); }
+});
+
+document.getElementById('changeStoreBtn').addEventListener('click', ()=>{
+  currentStoreCode = null;
+  showLoginGate('store');
+});
+document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+  if(currentUserCode) await logActivity(currentUserCode, 'logout');
+  await localDelete('session:userCode:'+currentStoreCode);
+  await localDelete('session:userRole:'+currentStoreCode);
+  currentUserCode = null;
+  currentUserRole = null;
+  showLoginGate('user');
+});
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  if(!fbReady) document.getElementById('firebaseSetupBanner').style.display = 'block';
+  const savedStore = await localGet('session:storeCode');
+  if(savedStore && VALID_STORE_CODES.includes(savedStore)){
+    currentStoreCode = savedStore;
+    const savedUser = await localGet('session:userCode:'+savedStore);
+    const savedRole = await localGet('session:userRole:'+savedStore);
+    if(savedUser && savedRole){
+      currentUserCode = savedUser;
+      currentUserRole = savedRole;
+      await completeLogin();
+      return;
+    }
+    showLoginGate('user');
+    return;
+  }
+  showLoginGate('store');
+});
+
+/* ============================= UPLOAD & PARSE ============================= */
+let lastUploadGroups = null;
+let lastUploadDate = null;
+
+document.getElementById('processBtn').addEventListener('click', async ()=>{
+  const file = document.getElementById('uploadFile').files[0];
+  const date = document.getElementById('uploadDate').value;
+  const statusEl = document.getElementById('uploadStatus');
+  if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+  if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+  statusEl.textContent = 'Reading file…';
+
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+
+    // Use the first VISIBLE sheet — skip hidden/very-hidden sheets entirely.
+    let sheetName = wb.SheetNames[0];
+    if(wb.Workbook && wb.Workbook.Sheets){
+      const visibleSheet = wb.Workbook.Sheets.find(s => s && s.name && !s.Hidden);
+      if(visibleSheet) sheetName = visibleSheet.name;
+    }
+    const sheet = wb.Sheets[sheetName];
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+    if(rows.length < 2){ statusEl.textContent = 'File has no data rows.'; return; }
+
+    // !rows and !cols hidden flags use ABSOLUTE sheet indices (from row 0 / column A),
+    // but sheet_to_json's output array is indexed relative to the used range's start —
+    // convert absolute to relative so hidden rows/columns are matched correctly even
+    // when the data doesn't start at the very top-left of the sheet.
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+
+    // Hidden columns are blanked out before column detection so a hidden column's
+    // header can never be matched — its data is then never read for any field.
+    const hiddenCols = new Set();
+    if(sheet['!cols']){
+      sheet['!cols'].forEach((c, absIdx)=>{
+        if(c && c.hidden){ const relIdx = absIdx - range.s.c; if(relIdx>=0) hiddenCols.add(relIdx); }
+      });
+    }
+    const headerRow = rows[0].map((h, idx) => hiddenCols.has(idx) ? '' : h);
+    const cols = detectColumns(headerRow);
+    const missing = ['orderNo','driverNo','suburb','items'].filter(f=>cols[f]===undefined);
+    if(missing.length){
+      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Check the file headers.';
+      return;
+    }
+
+    // Hidden rows are skipped entirely — never counted as orders.
+    const hiddenRows = new Set();
+    if(sheet['!rows']){
+      sheet['!rows'].forEach((r, absIdx)=>{
+        if(r && r.hidden){ const relIdx = absIdx - range.s.r; if(relIdx>=0) hiddenRows.add(relIdx); }
+      });
+    }
+
+    const records = [];
+    const externalReturns = [];
+    const preloadOrders = [];
+    const seenSignatures = new Set();
+    let duplicatesSkipped = 0;
+    for(let i=1;i<rows.length;i++){
+      if(hiddenRows.has(i)) continue;
+      const r = rows[i];
+      if(!r || r.every(c=>c==='' || c==null)) continue;
+      const orderNo = String(r[cols.orderNo]||'').trim();
+      if(!orderNo) continue;
+      const details = cols.details!==undefined ? String(r[cols.details]||'').trim() : '';
+      const rec = {
+        id: uid(),
+        category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
+        orderNo,
+        driverNo: String(r[cols.driverNo]||'').trim(),
+        driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
+        zone: cols.zone!==undefined ? String(r[cols.zone]||'').trim() : '',
+        suburb: String(r[cols.suburb]||'').trim(),
+        items: Number(r[cols.items])||0,
+        details,
+        isNetley: /fullserve/i.test(details),
+        status: 'pending',
+        loadedAt: null
+      };
+      // Skip exact duplicates — every source column value must match another
+      // already-seen row for it to be dropped (not just a repeated order no.).
+      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
+      if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
+      seenSignatures.add(signature);
+
+      if(isPreload(rec)){
+        // PL# zone orders (preload) are excluded from the main dataset entirely —
+        // no ZQR form, no Scan/in-transit/delivered status, no Dashboard — and only
+        // surfaced in the Report's Preload table.
+        preloadOrders.push(rec);
+      }else if(/[A-Za-z]/.test(orderNo)){
+        // Alphanumeric order numbers are external returns — excluded from the main
+        // dataset (ZQR forms, Dashboard, Scan, Records) and only surfaced in the
+        // Report's External Returns Assigned table.
+        externalReturns.push(rec);
+      }else{
+        records.push(rec);
+      }
+    }
+    if(!records.length && !externalReturns.length && !preloadOrders.length){ statusEl.textContent = 'No valid order rows found.'; return; }
+
+    const dayObj = { date, uploadedAt: new Date().toISOString(), records, externalReturns, preloadOrders };
+    await saveDay(date, dayObj);
+    await addDateToIndex(date);
+    const withinRetention = date >= isoDaysAgo(RETENTION_DAYS-1);
+    await cleanupOldData();
+
+    const groups = groupByZoneDriver(records);
+    lastUploadGroups = groups;
+    lastUploadDate = date;
+
+    statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Saved '+records.length+' orders for '+date+'.</span>'
+      + (withinRetention ? '' : ' <span style="color:var(--warning); font-weight:600;">Note: this date is older than the '+RETENTION_DAYS+'-day retention window and will be removed on next cleanup.</span>');
+    document.getElementById('uploadPreviewCard').style.display = 'block';
+    document.getElementById('uploadSummaryText').textContent =
+      records.length+' orders across '+groups.length+' zone/driver group(s), '+
+      records.reduce((s,r)=>s+r.items,0)+' total items.';
+
+    document.getElementById('formsDate').value = date;
+    await renderZoneAssignment();
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = 'Could not read that file. Make sure it is a valid .xlsx/.csv export.';
+  }
+});
+
+/* ---- Zone assignment: manually map each driver to a unique zone ---- */
+const ZONE_OPTIONS = ['1','2','3','4','5','6','7','A','B','C','D','E1','E2','E3','E4'];
+
+async function renderZoneAssignment(){
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const box = document.getElementById('zoneAssignBox');
+  const day = await loadDay(date);
+  if(!day || !day.records.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Upload a file for this date to assign zones.</div>';
+    return;
+  }
+  const driverNos = [...new Set(day.records.map(r=>r.driverNo))].sort((a,b)=>String(a).localeCompare(String(b)));
+  const assignedZone = {}; // driverNo -> zone
+  day.records.forEach(r=>{ if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone; });
+  const usedZones = new Set(Object.values(assignedZone));
+
+  box.innerHTML = driverNos.map(dn=>{
+    const currentZone = assignedZone[dn] || '';
+    const options = ZONE_OPTIONS.filter(z => z===currentZone || !usedZones.has(z));
+    return '<div class="zone-assign-row">'
+      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+'</span>'
+      + '<select class="zone-assign-select'+(currentZone?'':' unassigned')+'" data-driver="'+escapeHtml(dn)+'">'
+      + '<option value="">Unassigned</option>'
+      + options.map(z=>'<option value="'+z+'"'+(z===currentZone?' selected':'')+'>Zone '+z+'</option>').join('')
+      + '</select></div>';
+  }).join('');
+
+  box.querySelectorAll('.zone-assign-select').forEach(sel=>{
+    sel.addEventListener('change', onZoneAssignChange);
+  });
+}
+
+async function onZoneAssignChange(e){
+  const driverNo = e.target.dataset.driver;
+  const zone = e.target.value;
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const day = await loadDay(date);
+  if(!day) return;
+  day.records.forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
+  await saveDay(date, day);
+  toast(zone ? 'Driver '+driverNo+' assigned to Zone '+zone : 'Driver '+driverNo+' unassigned');
+  await renderZoneAssignment();
+
+  // Keep every other view that's currently showing this date in sync.
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+}
+document.getElementById('uploadDate').addEventListener('change', renderZoneAssignment);
+
+function groupByZoneDriver(records){
+  const map = {};
+  records.forEach(r=>{
+    const key = r.zone+'␟'+r.driverNo;
+    if(!map[key]) map[key] = {zone:r.zone, driverNo:r.driverNo, driverName:r.driverName||'', records:[]};
+    if(!map[key].driverName && r.driverName) map[key].driverName = r.driverName;
+    map[key].records.push(r);
+  });
+  return Object.values(map).sort((a,b)=> (a.zone+a.driverNo).localeCompare(b.zone+b.driverNo));
+}
+
+document.getElementById('goToFormsBtn').addEventListener('click', ()=> showView('forms'));
+document.getElementById('printAllBtn').addEventListener('click', async ()=>{
+  if(!lastUploadDate) return;
+  await printForms(lastUploadDate, null);
+});
+
+document.getElementById('clearDateBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('uploadDate').value;
+  const statusEl = document.getElementById('clearDateStatus');
+  if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+
+  const day = await loadDay(date);
+  if(!day || !day.records.length){
+    statusEl.textContent = 'No data found for '+date+'.';
+    return;
+  }
+  const ok = confirm('Delete all '+day.records.length+' order(s) and ZQR forms for '+date+'? This cannot be undone.');
+  if(!ok) return;
+
+  await storeDelete(storeKey('day:'+date));
+  await storeDelete(storeKey('report:'+date));
+  const dates = (await loadDatesIndex()).filter(d=>d!==date);
+  await saveDatesIndex(dates);
+
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Cleared all data for '+date+'.</span>';
+  if(lastUploadDate===date){ lastUploadDate=null; lastUploadGroups=null; document.getElementById('uploadPreviewCard').style.display='none'; }
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReport();
+  await renderZoneAssignment();
+});
+
+/* ============================= FORMS VIEW ============================= */
+document.getElementById('formsDate').addEventListener('change', ()=>renderFormsList());
+
+async function renderFormsList(){
+  const date = document.getElementById('formsDate').value || todayISO();
+  const listEl = document.getElementById('formsList');
+  const day = await loadDay(date);
+  if(!day || !day.records.length){
+    listEl.innerHTML = '<div class="card empty"><div class="display">No data for '+date+'</div>Upload a file for this date to generate forms.</div>';
+    return;
+  }
+  const groups = groupByZoneDriver(day.records);
+  listEl.innerHTML = groups.map((g,i)=>{
+    const delivered = g.records.filter(r=>r.status==='delivered').length;
+    const items = g.records.reduce((s,r)=>s+r.items,0);
+    return '<div class="zone-card">'
+      + '<div class="zone-head"><div><div class="zid">Zone '+escapeHtml(g.zone)+'</div>'
+      + '<div class="did">Driver '+escapeHtml(g.driverNo)+'</div></div>'
+      + '<div class="badge '+(delivered===g.records.length?'delivered':'pending')+'">'+delivered+' / '+g.records.length+' delivered</div></div>'
+      + '<div class="zone-body">'
+      + '<div class="meta-row"><span><b>'+g.records.length+'</b> orders</span><span><b>'+items+'</b> items</span></div>'
+      + '<div class="btn-row">'
+      + '<button class="btn btn-ghost" onclick="viewForm(\''+date+'\','+i+')">View</button>'
+      + '<button class="btn btn-primary" onclick="viewFormPdf(\''+date+'\','+i+')">View PDF</button>'
+      + '<button class="btn btn-ghost" onclick="printForms(\''+date+'\','+i+')">Print (browser dialog)</button>'
+      + '</div></div></div>';
+  }).join('');
+  listEl.dataset.date = date;
+  window._formsCache = groups;
+}
+
+function buildZqrFormHtml(date, g){
+  const qrId = 'qr_'+uid();
+  const zqrText = buildZqrCode(g.zone, date);
+  const rowsHtml = g.records.map((r,i)=>{
+    return '<tr'+(r.isNetley ? ' class="row-shaded"' : '')+'><td>'+(i+1)+'</td><td class="mono">'+escapeHtml(r.orderNo)+'</td>'
+      +'<td>'+escapeHtml(r.suburb)+'</td><td class="center">'+r.items+'</td>'
+      +'<td class="center"></td></tr>';
+  }).join('');
+  return '<div class="zqr-print">'
+    + '<div class="zqr-topbar"><div><b>IKEA</b><span>Goods Outflow · Adelaide</span></div>'
+    + '<div class="zqr-formtitle"><b>ZONE QR &amp; DRIVER HANDOUT FORM</b><span>ZQR · Complete before driver departs</span></div></div>'
+    + '<div class="zqr-infobar"><div class="zqr-infogrid">'
+    + '<div><label>ZONE / BAY LOCATION</label><div class="val">'+escapeHtml(g.zone)+'</div></div>'
+    + '<div><label>DATE</label><div class="val">'+date+'</div></div>'
+    + '<div><label>DRIVER NAME</label><div class="val">&nbsp;</div></div>'
+    + '<div><label>DRIVER NO.</label><div class="val">'+escapeHtml(g.driverNo)+'</div></div>'
+    + '</div><div class="zqr-qrbox"><div class="qr-box" id="'+qrId+'"></div><span>SCAN TO CONFIRM</span>'
+    + '<span class="zqr-code-label mono">'+escapeHtml(zqrText)+'</span></div></div>'
+    + '<div class="zqr-section-label">ORDERS LOADED TO THIS ZONE</div>'
+    + '<table class="zqr-table"><thead><tr><th>#</th><th>Order No.</th><th>Suburb</th><th>No. of Items</th><th>Loaded ✓</th></tr></thead>'
+    + '<tbody>'+rowsHtml+'</tbody></table>'
+    + '<div class="zqr-section-label">DRIVER SIGN-OFF — TO BE COMPLETED BEFORE LEAVING</div>'
+    + '<div class="zqr-confirm-text">I confirm I have received the goods listed above, in good condition, for the zone and bay stated.</div>'
+    + '<div class="zqr-signoff-grid"><div><label>SIGNATURE</label><div class="line"></div></div>'
+    + '<div><label>PRINTED NAME</label><div class="line"></div></div>'
+    + '<div><label>DATE</label><div class="line"></div></div>'
+    + '<div><label>TIME</label><div class="line"></div></div></div>'
+    + '<div class="zqr-footer">IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative</div>'
+    + '</div>'
+    + '<!--QR::'+qrId+'::'+zqrText+'-->';
+}
+
+function renderQrPlaceholders(container){
+  const html = container.innerHTML;
+  const re = /<!--QR::(.*?)::(.*?)-->/g;
+  let m;
+  while((m = re.exec(html))){
+    const id = m[1], text = m[2];
+    const el = container.querySelector('#'+id) || document.getElementById(id);
+    if(!el) continue;
+    if(window.QRCode){
+      el.innerHTML='';
+      try{ new QRCode(el, {text, width:76, height:76, correctLevel: QRCode.CorrectLevel.M}); }
+      catch(e){ el.innerHTML = qrFallbackHtml(text); }
+    }else{
+      el.innerHTML = qrFallbackHtml(text);
+    }
+  }
+}
+function qrFallbackHtml(text){
+  return '<div style="width:76px;height:76px;border:1.5px dashed #999;display:flex;align-items:center;'
+    + 'justify-content:center;text-align:center;font-size:8px;line-height:1.2;padding:4px;color:#900;">'
+    + 'QR unavailable — code:<br><b style="font-family:monospace;">'+escapeHtml(text)+'</b></div>';
+}
+
+/* ============================= PDF GENERATION ============================= */
+function qrDataUrl(text, size){
+  return new Promise((resolve)=>{
+    const div = document.createElement('div');
+    div.style.position='fixed'; div.style.left='-9999px'; div.style.top='0';
+    document.body.appendChild(div);
+    try{ new QRCode(div, {text, width:size, height:size, correctLevel: QRCode.CorrectLevel.M}); }catch(e){}
+    setTimeout(()=>{
+      let url = null;
+      const canvas = div.querySelector('canvas');
+      if(canvas){ url = canvas.toDataURL('image/png'); }
+      else{ const img = div.querySelector('img'); if(img) url = img.src; }
+      document.body.removeChild(div);
+      resolve(url);
+    }, 30);
+  });
+}
+
+async function drawZqrFormPdf(doc, date, g, startNewPage){
+  if(startNewPage) doc.addPage();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 14;
+
+  // Top bar: brand left, form title right
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20);
+  doc.text('IKEA', marginX, 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+  doc.text('Goods Outflow · Adelaide', marginX, 21);
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20);
+  doc.text('ZONE QR & DRIVER HANDOUT FORM', pageWidth-marginX, 16, {align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+  doc.text('ZQR · Complete before driver departs', pageWidth-marginX, 21, {align:'right'});
+
+  doc.setDrawColor(20); doc.setLineWidth(0.8);
+  doc.line(marginX, 25, pageWidth-marginX, 25);
+
+  // Info box: Zone/Bay, Date, Driver Name, Driver No. + QR
+  const boxTop = 31, boxHeight = 30;
+  doc.setDrawColor(150); doc.setLineWidth(0.3);
+  doc.rect(marginX, boxTop, pageWidth-2*marginX, boxHeight);
+
+  function fieldBlock(label, value, x, y){
+    doc.setFontSize(7.5); doc.setTextColor(110); doc.setFont('helvetica','bold');
+    doc.text(label, x, y);
+    doc.setFontSize(13); doc.setTextColor(15); doc.setFont('helvetica','bold');
+    doc.text(String(value||''), x, y+6);
+  }
+  fieldBlock('ZONE / BAY LOCATION', g.zone, marginX+6, boxTop+11);
+  fieldBlock('DATE', date, marginX+95, boxTop+11);
+  fieldBlock('DRIVER NAME', '', marginX+6, boxTop+24);
+  fieldBlock('DRIVER NO.', g.driverNo, marginX+95, boxTop+24);
+
+  const zqrText = buildZqrCode(g.zone, date);
+  const zqrImg = await qrDataUrl(zqrText, 160);
+  const qrSize = 16;
+  const qrX = pageWidth - marginX - qrSize - 10;
+  const qrY = boxTop + 4;
+  if(zqrImg){
+    doc.addImage(zqrImg, 'PNG', qrX, qrY, qrSize, qrSize);
+  }else{
+    doc.setDrawColor(180); doc.setLineWidth(0.3);
+    doc.rect(qrX, qrY, qrSize, qrSize);
+    doc.setFontSize(6); doc.setTextColor(150);
+    doc.text('QR unavailable', qrX+qrSize/2, qrY+qrSize/2-2, {align:'center', maxWidth:qrSize});
+  }
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(60);
+  doc.text('SCAN TO CONFIRM', qrX+qrSize/2, qrY+qrSize+3.5, {align:'center'});
+  doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(20);
+  doc.text(zqrText, qrX+qrSize/2, qrY+qrSize+8, {align:'center'});
+
+  // Section label + table
+  let y = boxTop+boxHeight+10;
+  doc.setDrawColor(20); doc.setLineWidth(0.6);
+  doc.line(marginX, y, pageWidth-marginX, y);
+  doc.setFontSize(10.5); doc.setFont('helvetica','bold'); doc.setTextColor(15);
+  doc.text('ORDERS LOADED TO THIS ZONE', marginX, y+6);
+
+  doc.autoTable({
+    startY: y+10,
+    margin:{ left:marginX, right:marginX },
+    head:[['#','Order No.','Suburb','No. of Items','Loaded']],
+    body: g.records.map((r,i)=>[String(i+1), r.orderNo, r.suburb, String(r.items), '']),
+    styles:{ fontSize:9, cellPadding:3, lineColor:[150,150,150], lineWidth:0.2, textColor:20 },
+    headStyles:{ fillColor:[242,242,242], textColor:20, fontStyle:'bold', fontSize:8 },
+    columnStyles:{ 0:{cellWidth:10, halign:'center'}, 3:{cellWidth:28, halign:'center'}, 4:{cellWidth:22, halign:'center'} },
+    didParseCell:(data)=>{
+      if(data.section==='body'){
+        const rec = g.records[data.row.index];
+        if(rec && rec.isNetley) data.cell.styles.fillColor = [228,230,233];
+      }
+    }
+  });
+
+  let finalY = doc.lastAutoTable.finalY + 12;
+  doc.setDrawColor(20); doc.setLineWidth(0.6);
+  doc.line(marginX, finalY, pageWidth-marginX, finalY);
+  doc.setFontSize(10.5); doc.setFont('helvetica','bold'); doc.setTextColor(15);
+  doc.text('DRIVER SIGN-OFF — TO BE COMPLETED BEFORE LEAVING', marginX, finalY+6);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(70);
+  doc.text('I confirm I have received the goods listed above, in good condition, for the zone and bay stated.', marginX, finalY+12);
+
+  const signY = finalY+28;
+  const colWidth = (pageWidth-2*marginX-3*8)/4;
+  ['SIGNATURE','PRINTED NAME','DATE','TIME'].forEach((lab,i)=>{
+    const x = marginX + i*(colWidth+8);
+    doc.setFontSize(7.5); doc.setTextColor(110); doc.setFont('helvetica','bold');
+    doc.text(lab, x, signY-3);
+    doc.setDrawColor(120); doc.setLineWidth(0.3);
+    doc.line(x, signY, x+colWidth, signY);
+  });
+
+  doc.setFontSize(8); doc.setTextColor(140); doc.setFont('helvetica','normal');
+  doc.text('IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative', pageWidth/2, 287, {align:'center'});
+}
+
+function showPdfModal(title, doc, filename, previewHtml){
+  document.getElementById('pdfModalTitle').textContent = title;
+  document.getElementById('pdfPreviewArea').innerHTML = previewHtml;
+  setTimeout(()=>renderQrPlaceholders(document.getElementById('pdfPreviewArea')), 30);
+
+  function download(){
+    try{
+      doc.save(filename);
+      return true;
+    }catch(e){
+      console.error(e);
+      return false;
+    }
+  }
+
+  const banner = document.getElementById('pdfSavedBanner');
+  if(download()){
+    banner.textContent = 'Downloaded as '+filename+' — check your Downloads folder to open or print it.';
+  }else{
+    banner.textContent = 'Could not auto-download — use the Download PDF button below.';
+  }
+  document.getElementById('pdfDownloadBtn').onclick = download;
+  document.getElementById('pdfModalOverlay').classList.add('show');
+}
+document.getElementById('pdfModalClose').addEventListener('click', ()=>{
+  document.getElementById('pdfModalOverlay').classList.remove('show');
+});
+document.getElementById('pdfModalOverlay').addEventListener('click', (e)=>{
+  if(e.target.id==='pdfModalOverlay'){
+    document.getElementById('pdfModalOverlay').classList.remove('show');
+  }
+});
+
+window.viewFormPdf = async function(date, idx){
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF){ throw new Error('PDF library (jsPDF) did not load — check your internet connection.'); }
+    const groups = window._formsCache;
+    const g = groups && groups[idx];
+    if(!g){ throw new Error('Could not find that form — try reopening the ZQR Forms page.'); }
+    toast('Building PDF…');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'mm', format:'a4'});
+    if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
+    await drawZqrFormPdf(doc, date, g, false);
+    const filename = 'ZQR_'+date+'_Zone-'+g.zone+'_Driver-'+g.driverNo+'.pdf';
+    showPdfModal('Zone '+g.zone+' — Driver '+g.driverNo, doc, filename, buildZqrFormHtml(date, g));
+  }catch(err){
+    console.error(err);
+    toast('Could not build the PDF: '+err.message);
+  }
+}
+
+window.viewAllFormsPdf = async function(date){
+  try{
+    const day = await loadDay(date);
+    if(!day || !day.records.length){ throw new Error('No data uploaded for '+date+'.'); }
+    if(!window.jspdf || !window.jspdf.jsPDF){ throw new Error('PDF library (jsPDF) did not load — check your internet connection.'); }
+    toast('Building PDF…');
+    const groups = groupByZoneDriver(day.records);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'mm', format:'a4'});
+    if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
+    for(let i=0;i<groups.length;i++){ await drawZqrFormPdf(doc, date, groups[i], i>0); }
+    const filename = 'ZQR_'+date+'_all-forms.pdf';
+    const previewHtml = groups.map(g=>buildZqrFormHtml(date, g)).join('');
+    showPdfModal('All ZQR forms — '+date, doc, filename, previewHtml);
+  }catch(err){
+    console.error(err);
+    toast('Could not build the PDF: '+err.message);
+  }
+}
+
+window.viewForm = function(date, idx){
+  const g = window._formsCache[idx];
+  document.getElementById('modalTitle').textContent = 'Zone '+g.zone+' — Driver '+g.driverNo;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="btn-row" style="margin-bottom:14px;">'
+    + '<button class="btn btn-primary" onclick="viewFormPdf(\''+date+'\','+idx+')">View PDF</button>'
+    + '<button class="btn btn-ghost" onclick="printForms(\''+date+'\','+idx+')">Print (browser dialog)</button>'
+    + '</div>' + buildZqrFormHtml(date, g, false);
+  document.getElementById('modalOverlay').classList.add('show');
+  setTimeout(()=>renderQrPlaceholders(body), 30);
+}
+document.getElementById('modalClose').addEventListener('click', ()=>{
+  document.getElementById('modalOverlay').classList.remove('show');
+});
+document.getElementById('modalOverlay').addEventListener('click', (e)=>{
+  if(e.target.id==='modalOverlay') document.getElementById('modalOverlay').classList.remove('show');
+});
+
+window.printForms = async function(date, idx){
+  const day = await loadDay(date);
+  if(!day) return;
+  const groups = groupByZoneDriver(day.records);
+  const target = idx===null ? groups : [groups[idx]];
+  const area = document.getElementById('printArea');
+  area.innerHTML = target.map(g=>buildZqrFormHtml(date, g, true)).join('');
+  setTimeout(()=>{
+    renderQrPlaceholders(area);
+    setTimeout(()=>window.print(), 150);
+  }, 30);
+}
+
+/* ============================= SCAN VIEW ============================= */
+const scanInput = document.getElementById('scanInput');
+scanInput.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const val = scanInput.value.trim();
+    scanInput.value='';
+    if(val) handleScan(val);
+  }
+});
+
+document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
+  currentScanOrder = null;
+  await clearInProgressScan();
+  renderScanStages();
+  scanInput.focus();
+});
+
+async function handleScan(raw){
+  if(!currentScanOrder){
+    await handleOrderScan(raw);
+  }else{
+    await handleZqrScan(raw);
+  }
+}
+
+function parseOrderCode(raw){
+  const parts = raw.split(':');
+  if(parts[0]==='ORDER' && parts.length>=3){
+    return { date: parts[1], orderNo: parts.slice(2).join(':') };
+  }
+  return { date: null, orderNo: raw };
+}
+function parseZqrCode(raw){
+  const idx = raw.lastIndexOf('-');
+  if(idx <= 0) return null;
+  const zone = raw.slice(0, idx);
+  const dateCode = raw.slice(idx+1);
+  if(!/^\d{6}$/.test(dateCode)) return null;
+  return { zone, dateCode };
+}
+
+/* ---- Recover in-progress scan work if the app reloads/gets logged out mid-scan ----
+   Only restored if it was saved on today's date — a leftover scan from a
+   previous day is stale and gets discarded, per spec. */
+async function saveInProgressScan(){
+  await storeSet(storeKey('inProgressScan'), JSON.stringify({ savedOn: todayISO(), scanOrder: currentScanOrder }));
+}
+async function clearInProgressScan(){
+  await storeDelete(storeKey('inProgressScan'));
+}
+async function restoreInProgressScan(){
+  const raw = await storeGet(storeKey('inProgressScan'));
+  if(!raw) return;
+  try{
+    const saved = JSON.parse(raw);
+    if(saved && saved.savedOn===todayISO() && saved.scanOrder){
+      currentScanOrder = saved.scanOrder;
+    }else{
+      await clearInProgressScan();
+    }
+  }catch(e){ await clearInProgressScan(); }
+}
+
+async function handleOrderScan(raw){
+  const parsed = parseOrderCode(raw);
+  let date = parsed.date || document.getElementById('formsDate').value || todayISO();
+  let day = await loadDay(date);
+  let rec = day ? day.records.find(r=>r.orderNo===parsed.orderNo) : null;
+
+  if(!rec){
+    // fall back: search all dates for this order number
+    const dates = await loadDatesIndex();
+    for(const d of dates){
+      const dObj = await loadDay(d);
+      const found = dObj && dObj.records.find(r=>r.orderNo===parsed.orderNo);
+      if(found){ rec = found; date = d; day = dObj; break; }
+    }
+  }
+  if(!rec){
+    toast('Order '+parsed.orderNo+' not found');
+    beep(220,220);
+    return;
+  }
+  currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
+                        category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
+  if(rec.status==='pending'){
+    rec.status = 'in-transit';
+    rec.inTransitAt = new Date().toISOString();
+    await saveDay(date, day);
+  }
+  await saveInProgressScan();
+  renderScanStages();
+}
+
+async function handleZqrScan(raw){
+  const z = parseZqrCode(raw);
+  const stageEl = document.getElementById('stageBWrap');
+  if(!z){
+    toast('Not a recognised ZQR code');
+    beep(220,220);
+    return;
+  }
+  const match = z.zone===currentScanOrder.zone && z.dateCode===formatDDMMYY(currentScanOrder.date);
+  if(match){
+    // mark delivered
+    const day = await loadDay(currentScanOrder.date);
+    const rec = day.records.find(r=>r.id===currentScanOrder.recId);
+    if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); await saveDay(currentScanOrder.date, day); }
+    beep(1046,140);
+    stageEl.innerHTML = renderStageB('match');
+    await clearInProgressScan();
+    setTimeout(()=>{ currentScanOrder=null; renderScanStages(); scanInput.focus(); }, 1600);
+  }else{
+    beep(180,320);
+    stageEl.innerHTML = renderStageB('mismatch');
+  }
+}
+
+function renderStageB(result){
+  const manualRow = '<div class="manual-zqr-row">'
+    + '<input type="text" id="manualZqrInput" placeholder="Or type the zone code, e.g. 1-310726" autocomplete="off" '
+    + 'onkeydown="if(event.key===\'Enter\'){ event.preventDefault(); handleManualZqr(); }"/>'
+    + '<button class="btn btn-primary" onclick="handleManualZqr()">Confirm</button>'
+    + '</div>';
+  if(result==='match'){
+    return '<div class="scan-stage step-b match"><div class="scan-result-big" style="color:var(--success);">DELIVERED ✓</div>'
+      + '<div class="subtext">Order '+escapeHtml(currentScanOrder.orderNo)+' confirmed at Zone '+escapeHtml(currentScanOrder.zone)+'.</div></div>';
+  }
+  if(result==='mismatch'){
+    return '<div class="scan-stage step-b mismatch"><div class="scan-result-big" style="color:var(--danger);">WRONG LOCATION</div>'
+      + '<div class="subtext" style="margin-bottom:12px;">Expected Zone '+escapeHtml(currentScanOrder.zone)+' / Driver '+escapeHtml(currentScanOrder.driverNo)+'. Scan the correct ZQR, or Reset.</div>'
+      + manualRow + '</div>';
+  }
+  return '<div class="scan-stage step-b"><div class="scan-flash-prompt">Scan the ZQR now</div>'
+    + manualRow + '</div>';
+}
+
+window.handleManualZqr = function(){
+  const input = document.getElementById('manualZqrInput');
+  if(!input) return;
+  const val = input.value.trim();
+  if(!val) return;
+  input.value = '';
+  handleZqrScan(val);
+}
+
+function focusScanInput(){
+  const input = document.getElementById('scanInput');
+  if(input) setTimeout(()=>input.focus(), 30);
+}
+
+function renderScanStages(){
+  const stageA = document.getElementById('stageA');
+  const stageBWrap = document.getElementById('stageBWrap');
+  if(!currentScanOrder){
+    stageA.style.display='none';
+    stageBWrap.innerHTML='';
+    focusScanInput();
+    return;
+  }
+  stageA.style.display='block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Order scanned</div>'
+    + '<div class="scan-order-no mono">'+escapeHtml(currentScanOrder.orderNo)+'</div>'
+    + '<div class="scan-zone-driver">'
+    +   '<span class="zd-chip zone">Zone '+escapeHtml(currentScanOrder.zone)+'</span>'
+    +   '<span class="zd-chip driver">Driver '+escapeHtml(currentScanOrder.driverNo)+'</span>'
+    + '</div>'
+    + '<div class="subtext" style="margin-bottom:0;">'+escapeHtml(currentScanOrder.suburb)+' · '+currentScanOrder.items+' items</div>'
+    + '</div>';
+  stageBWrap.innerHTML = renderStageB(null);
+  focusScanInput();
+}
+
+/* ============================= SEARCH VIEW ============================= */
+/* Live Order No. lookup — instant results as the user types, scoped to the shared Records date */
+let liveOrderLookupToken = 0;
+document.getElementById('fOrderNoLive').addEventListener('input', ()=>{ liveOrderLookup(); });
+document.getElementById('recordsDate').addEventListener('change', ()=>{
+  liveOrderLookup();
+  if(searchHasRun) runSearch();
+});
+
+async function liveOrderLookup(){
+  const myToken = ++liveOrderLookupToken;
+  const val = document.getElementById('fOrderNoLive').value.trim();
+  const date = document.getElementById('recordsDate').value;
+  const resultEl = document.getElementById('liveOrderResult');
+  if(!val){ resultEl.innerHTML = ''; return; }
+  if(!date){ resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">Choose a date first.</div>'; return; }
+
+  const day = await loadDay(date);
+  if(myToken !== liveOrderLookupToken) return; // a newer keystroke/date-change superseded this lookup
+
+  const found = day ? day.records.find(r=>r.orderNo===val) : null;
+
+  if(found){
+    resultEl.innerHTML = '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
+      + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+date+'</div>'
+      + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
+      + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
+      + '<span>Zone <b class="mono">'+escapeHtml(found.zone)+'</b></span>'
+      + '<span>Suburb <b>'+escapeHtml(found.suburb)+'</b></span>'
+      + '<span>Items <b>'+found.items+'</b></span>'
+      + '<span><span class="badge '+found.status+'">'+found.status+'</span></span>'
+      + '</div></div>';
+  }else{
+    resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">No order matching "'+escapeHtml(val)+'" found for '+date+'.</div>';
+  }
+}
+
+let statusFilter = '';
+function applyStatusFilterUI(status){
+  statusFilter = status;
+  document.querySelectorAll('.status-filter-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.status===status);
+  });
+}
+function setStatusFilter(status){
+  applyStatusFilterUI(status);
+  runSearch();
+}
+document.querySelectorAll('.status-filter-btn').forEach(b=>{
+  b.addEventListener('click', ()=>setStatusFilter(b.dataset.status));
+});
+applyStatusFilterUI('');
+
+document.getElementById('searchBtn').addEventListener('click', runSearch);
+document.getElementById('clearSearchBtn').addEventListener('click', ()=>{
+  ['fSuburb','fDriver','fZone'].forEach(id=>document.getElementById(id).value='');
+  const resultsEl = document.getElementById('searchResults');
+  resultsEl.innerHTML='';
+  resultsEl.dataset.hasResults = '';
+  searchHasRun = false;
+  applyStatusFilterUI('');
+});
+
+async function runSearch(){
+  searchHasRun = true;
+  const suburb = document.getElementById('fSuburb').value.trim().toLowerCase();
+  const date = document.getElementById('recordsDate').value || todayISO();
+  const driver = document.getElementById('fDriver').value.trim().toLowerCase();
+  const zone = document.getElementById('fZone').value.trim().toLowerCase();
+  const resultsEl = document.getElementById('searchResults');
+  if(!resultsEl.dataset.hasResults) resultsEl.innerHTML = '<div class="subtext">Searching…</div>';
+
+  const day = await loadDay(date);
+  let results = [];
+  if(day){
+    day.records.forEach(r=>{
+      if(suburb && !r.suburb.toLowerCase().includes(suburb)) return;
+      if(driver && !r.driverNo.toLowerCase().includes(driver)) return;
+      if(zone && r.zone.trim().toLowerCase() !== zone) return;
+      if(statusFilter && r.status !== statusFilter) return;
+      results.push(Object.assign({date}, r));
+    });
+  }
+  if(!results.length){
+    resultsEl.innerHTML = '<div class="empty"><div class="display">No matching records</div>No records for '+date+' match your filters.</div>';
+    resultsEl.dataset.hasResults = '';
+    return;
+  }
+  results.sort((a,b)=> a.driverNo.localeCompare(b.driverNo));
+  resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver</th><th>Zone</th><th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
+    + results.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
+      +'<td>'+escapeHtml(r.zone)+'</td><td>'+escapeHtml(r.suburb)+'</td><td>'+r.items+'</td>'
+      +'<td><span class="badge '+r.status+'">'+r.status+'</span></td></tr>').join('')
+    + '</tbody></table>';
+  resultsEl.dataset.hasResults = '1';
+}
+
+/* ============================= REPORT ============================= */
+const REPORT_FAILED_HOUR = 10; // 10:00am cutoff for the report's "failed delivery" figure
+const REPORT_MANUAL_FIELDS = ['repController','repHours','repLastVehicle','repTent','repTmp','repTrolleys','repAnc','repOtherIssues'];
+
+(function populateHoursDropdown(){
+  const sel = document.getElementById('repHours');
+  for(let h=1; h<=12; h++){
+    const opt = document.createElement('option');
+    opt.value = String(h);
+    opt.textContent = h + (h===1 ? ' hour' : ' hours');
+    sel.appendChild(opt);
+  }
+})();
+
+document.getElementById('reportDate').addEventListener('change', refreshReport);
+REPORT_MANUAL_FIELDS.forEach(id=>{
+  document.getElementById(id).addEventListener('change', saveReportManualFields);
+});
+
+async function saveReportManualFields(){
+  const date = document.getElementById('reportDate').value || todayISO();
+  const data = {};
+  REPORT_MANUAL_FIELDS.forEach(id=>{ data[id] = document.getElementById(id).value; });
+  await saveReportData(date, data);
+  const statusEl = document.getElementById('reportSaveStatus');
+  statusEl.textContent = 'Saved.';
+  statusEl.style.color = 'var(--success)';
+  clearTimeout(statusEl._h);
+  statusEl._h = setTimeout(()=>{ statusEl.textContent = '\u00a0'; }, 2000);
+}
+
+function isReportFailed(record, date){
+  if(record.status==='delivered') return false;
+  const today = todayISO();
+  if(date < today) return true;
+  if(date > today) return false;
+  const cutoff = new Date(date+'T'+String(REPORT_FAILED_HOUR).padStart(2,'0')+':00:00');
+  return new Date() > cutoff;
+}
+
+async function refreshReport(){
+  const date = document.getElementById('reportDate').value || todayISO();
+  const data = await loadReportData(date);
+  REPORT_MANUAL_FIELDS.forEach(id=>{
+    document.getElementById(id).value = data[id] || '';
+  });
+  document.getElementById('reportSaveStatus').textContent = '\u00a0';
+  await refreshReportAutoFieldsOnly();
+}
+
+async function refreshReportAutoFieldsOnly(){
+  const date = document.getElementById('reportDate').value || todayISO();
+  const day = await loadDay(date);
+  const records = day ? day.records : [];
+
+  const driverNos = [...new Set(records.map(r=>String(r.driverNo).trim()))];
+  const vans = driverNos.filter(d=>/^\d{4}$/.test(d)).length;
+  const trucks = driverNos.filter(d=>/^\d{3}$/.test(d)).length;
+
+  document.getElementById('repVans').textContent = vans;
+  document.getElementById('repTrucks').textContent = trucks;
+  document.getElementById('repTotalOrders').textContent = records.length;
+
+  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt).map(r=>r.deliveredAt).sort();
+  const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  document.getElementById('repFirstDelivery').textContent = deliveredTimes.length ? fmt(deliveredTimes[0]) : '—';
+  document.getElementById('repLastDelivery').textContent = deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—';
+
+  const failedList = document.getElementById('repFailedList');
+  const failedRecords = records.filter(r=>isReportFailed(r, date));
+  if(!records.length){
+    failedList.innerHTML = '<div class="subtext" style="margin-bottom:0;">No orders uploaded for this date.</div>';
+  }else if(!failedRecords.length){
+    failedList.innerHTML = '<div class="subtext" style="margin-bottom:0;color:var(--success);">None — all orders delivered by 10:00am, or 10:00am hasn\'t passed yet.</div>';
+  }else{
+    failedList.innerHTML = failedRecords.map(r=>'<span class="failed-order-chip">'+escapeHtml(r.orderNo)+'</span>').join('');
+  }
+}
+
+/* ---- Full one-page report: manual + auto-generated + failed delivery + external returns ---- */
+function yesNoLabel(v){
+  return v==='yes' ? 'Yes' : v==='no' ? 'No' : '—';
+}
+
+async function computeReportData(date){
+  const manual = await loadReportData(date);
+  const day = await loadDay(date);
+  const records = day ? day.records : [];
+  const externalReturns = day ? (day.externalReturns || []) : [];
+  const preloadOrders = day ? (day.preloadOrders || []) : [];
+
+  const driverNos = [...new Set(records.map(r=>String(r.driverNo).trim()))];
+  const vans = driverNos.filter(d=>/^\d{4}$/.test(d)).length;
+  const trucks = driverNos.filter(d=>/^\d{3}$/.test(d)).length;
+
+  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt).map(r=>r.deliveredAt).sort();
+  const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+  const driverMap = {};
+  records.forEach(r=>{
+    const key = r.driverNo;
+    if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, hasNetley:false, orderCount:0 };
+    driverMap[key].orderCount++;
+    if(r.isNetley) driverMap[key].hasNetley = true;
+  });
+  const driverSnapshot = Object.values(driverMap).sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
+
+  const preloadMap = {};
+  preloadOrders.forEach(r=>{
+    const key = r.zone;
+    if(!preloadMap[key]) preloadMap[key] = { zone:r.zone, drivers:new Set(), orderCount:0 };
+    preloadMap[key].orderCount++;
+    preloadMap[key].drivers.add(r.driverNo);
+  });
+  const preloadSnapshot = Object.values(preloadMap)
+    .map(p=>({ zone:p.zone, driverNo:[...p.drivers].join(', '), orderCount:p.orderCount }))
+    .sort((a,b)=> String(a.zone).localeCompare(String(b.zone)));
+
+  return {
+    manual,
+    vans, trucks,
+    totalOrders: records.length,
+    totalPreload: preloadOrders.length,
+    totalNetley: records.filter(r=>r.isNetley).length,
+    firstDelivery: deliveredTimes.length ? fmt(deliveredTimes[0]) : '—',
+    lastDelivery: deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—',
+    driverSnapshot,
+    preloadSnapshot,
+    failedRecords: records.filter(r=>isReportFailed(r, date)),
+    externalReturns
+  };
+}
+
+function buildReportHtml(date, rd){
+  const m = rd.manual;
+  const driverRows = rd.driverSnapshot.length
+    ? rd.driverSnapshot.map(d=>'<tr><td class="mono">'+escapeHtml(d.driverNo)+'</td><td>'+escapeHtml(d.zone)+'</td><td class="center">'+(d.hasNetley?'Yes':'No')+'</td><td class="center">'+d.orderCount+'</td></tr>').join('')
+    : '<tr><td colspan="4" style="text-align:center;color:#666;">None</td></tr>';
+  const preloadRows = rd.preloadSnapshot.length
+    ? rd.preloadSnapshot.map(p=>'<tr><td class="mono">'+escapeHtml(p.zone)+'</td><td>'+escapeHtml(p.driverNo)+'</td><td class="center">'+p.orderCount+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="text-align:center;color:#666;">None</td></tr>';
+  const failedRows = rd.failedRecords.length
+    ? rd.failedRecords.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.driverNo)+'</td><td>'+escapeHtml(r.zone)+'</td><td>'+escapeHtml(r.suburb)+'</td></tr>').join('')
+    : '<tr><td colspan="4" style="text-align:center;color:#666;">None</td></tr>';
+  const externalRows = rd.externalReturns.length
+    ? rd.externalReturns.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.driverNo)+'</td><td>'+escapeHtml(r.zone)+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="text-align:center;color:#666;">None</td></tr>';
+
+  return '<div class="zqr-print report-print">'
+    + '<div class="zqr-topbar"><div><b>IKEA</b><span>Goods Outflow · Adelaide</span></div>'
+    + '<div class="zqr-formtitle"><b>DAILY LOAD-OUT REPORT</b><span>'+date+'</span></div></div>'
+
+    + '<table class="report-auto-table">'
+    + '<tr><th>Controller</th><td>'+escapeHtml(m.repController||'—')+'</td></tr>'
+    + '<tr><th>Load Out Hours</th><td>'+escapeHtml(m.repHours||'—')+'</td></tr>'
+    + '<tr><th>Last Vehicle Left</th><td>'+escapeHtml(m.repLastVehicle||'—')+'</td></tr>'
+    + '<tr><th>Tent Check</th><td>'+yesNoLabel(m.repTent)+'</td></tr>'
+    + '<tr><th>TMP Check</th><td>'+yesNoLabel(m.repTmp)+'</td></tr>'
+    + '<tr><th>Zone Clear</th><td>'+yesNoLabel(m.repTrolleys)+'</td></tr>'
+    + '<tr><th>ANC Supervisor Present</th><td>'+yesNoLabel(m.repAnc)+'</td></tr>'
+    + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
+    + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
+    + '<tr><th>Total Load-Out Orders</th><td>'+rd.totalOrders+'</td></tr>'
+    + '<tr><th>Total Netley Orders</th><td>'+rd.totalNetley+'</td></tr>'
+    + '<tr><th>Total Preload</th><td>'+rd.totalPreload+'</td></tr>'
+    + '<tr><th>First Zone Delivery</th><td>'+rd.firstDelivery+'</td></tr>'
+    + '<tr><th>Last Zone Delivery</th><td>'+rd.lastDelivery+'</td></tr>'
+    + '</table>'
+
+    + '<div class="zqr-section-label">DRIVER SNAPSHOT</div>'
+    + '<table class="zqr-table"><thead><tr><th>Driver No.</th><th>Zone</th><th>Netley Connect</th><th>No. of Orders</th></tr></thead><tbody>'+driverRows+'</tbody></table>'
+
+    + '<div class="zqr-section-label">PRELOAD</div>'
+    + '<table class="zqr-table"><thead><tr><th>Zone</th><th>Driver No.</th><th>No. of Orders</th></tr></thead><tbody>'+preloadRows+'</tbody></table>'
+
+    + '<div class="zqr-section-label">FAILED DELIVERY <span class="report-sub">(not delivered by 10:00am)</span></div>'
+    + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th><th>Suburb</th></tr></thead><tbody>'+failedRows+'</tbody></table>'
+
+    + '<div class="zqr-section-label">EXTERNAL RETURNS ASSIGNED</div>'
+    + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th></tr></thead><tbody>'+externalRows+'</tbody></table>'
+
+    + '<div class="zqr-section-label">OTHER ISSUES</div>'
+    + '<div class="report-issues-box">'+(m.repOtherIssues ? escapeHtml(m.repOtherIssues).replace(/\n/g,'<br>') : '<span style="color:#666;">None</span>')+'</div>'
+
+    + '<div class="zqr-footer">IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative</div>'
+    + '</div>';
+}
+
+let currentReportHtml = '';
+document.getElementById('viewReportBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('reportDate').value || todayISO();
+  const rd = await computeReportData(date);
+  currentReportHtml = buildReportHtml(date, rd);
+  document.getElementById('modalTitle').textContent = 'Load-Out Report — '+date;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="btn-row" style="margin-bottom:14px;">'
+    + '<button class="btn btn-primary" onclick="viewReportPdf()">View PDF</button>'
+    + '<button class="btn btn-ghost" onclick="printReport()">Print</button>'
+    + '</div>' + currentReportHtml;
+  document.getElementById('modalOverlay').classList.add('show');
+});
+
+window.printReport = function(){
+  const area = document.getElementById('printArea');
+  area.innerHTML = currentReportHtml;
+  setTimeout(()=>window.print(), 100);
+}
+
+async function drawReportPdf(doc, date, rd){
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 14;
+  const m = rd.manual;
+  let cursorY;
+
+  function ensureSpace(needed){
+    if(cursorY + needed > pageHeight - 15){ doc.addPage(); cursorY = 18; }
+  }
+  function sectionLabel(text){
+    ensureSpace(12);
+    doc.setDrawColor(20); doc.setLineWidth(0.5);
+    doc.line(marginX, cursorY, pageWidth-marginX, cursorY);
+    cursorY += 5;
+    doc.setFontSize(10.5); doc.setFont('helvetica','bold'); doc.setTextColor(15);
+    doc.text(text, marginX, cursorY);
+    cursorY += 3;
+  }
+  function kvTable(rows){
+    doc.autoTable({
+      startY: cursorY,
+      margin:{ left:marginX, right:marginX },
+      theme:'plain',
+      body: rows,
+      styles:{ fontSize:9, cellPadding:2, textColor:20 },
+      columnStyles:{ 0:{fontStyle:'bold', cellWidth:80}, 1:{halign:'left'} }
+    });
+    cursorY = doc.lastAutoTable.finalY + 8;
+  }
+  function dataTable(head, body){
+    doc.autoTable({
+      startY: cursorY,
+      margin:{ left:marginX, right:marginX },
+      head:[head],
+      body: body.length ? body : [head.map((_,i)=> i===0 ? 'None' : '')],
+      styles:{ fontSize:8.5, cellPadding:2.5, lineColor:[150,150,150], lineWidth:0.2, textColor:20 },
+      headStyles:{ fillColor:[242,242,242], textColor:20, fontStyle:'bold', fontSize:8 }
+    });
+    cursorY = doc.lastAutoTable.finalY + 8;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20);
+  doc.text('IKEA', marginX, 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+  doc.text('Goods Outflow · Adelaide', marginX, 21);
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20);
+  doc.text('DAILY LOAD-OUT REPORT', pageWidth-marginX, 16, {align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(date, pageWidth-marginX, 21, {align:'right'});
+  cursorY = 27;
+
+  kvTable([
+    ['Controller', m.repController||'—'],
+    ['Load Out Hours', m.repHours||'—'],
+    ['Last Vehicle Left', m.repLastVehicle||'—'],
+    ['Tent Check', yesNoLabel(m.repTent)],
+    ['TMP Check', yesNoLabel(m.repTmp)],
+    ['Zone Clear', yesNoLabel(m.repTrolleys)],
+    ['ANC Supervisor Present', yesNoLabel(m.repAnc)],
+    ['No. of Vans', String(rd.vans)],
+    ['No. of Trucks', String(rd.trucks)],
+    ['Total Load-Out Orders', String(rd.totalOrders)],
+    ['Total Netley Orders', String(rd.totalNetley)],
+    ['Total Preload', String(rd.totalPreload)],
+    ['First Zone Delivery', rd.firstDelivery],
+    ['Last Zone Delivery', rd.lastDelivery]
+  ]);
+
+  sectionLabel('DRIVER SNAPSHOT');
+  dataTable(['Driver No.','Zone','Netley Connect','No. of Orders'],
+    rd.driverSnapshot.map(d=>[d.driverNo, d.zone, d.hasNetley?'Yes':'No', String(d.orderCount)]));
+
+  sectionLabel('PRELOAD');
+  dataTable(['Zone','Driver No.','No. of Orders'],
+    rd.preloadSnapshot.map(p=>[p.zone, p.driverNo, String(p.orderCount)]));
+
+  sectionLabel('FAILED DELIVERY (not delivered by 10:00am)');
+  dataTable(['Order No.','Driver No.','Zone','Suburb'],
+    rd.failedRecords.map(r=>[r.orderNo, r.driverNo, r.zone, r.suburb]));
+
+  sectionLabel('EXTERNAL RETURNS ASSIGNED');
+  dataTable(['Order No.','Driver No.','Zone'],
+    rd.externalReturns.map(r=>[r.orderNo, r.driverNo, r.zone]));
+
+  sectionLabel('OTHER ISSUES');
+  ensureSpace(14);
+  doc.setDrawColor(180); doc.setLineWidth(0.3);
+  const issuesText = m.repOtherIssues || 'None';
+  const issuesLines = doc.splitTextToSize(issuesText, pageWidth-2*marginX-8);
+  const boxHeight = Math.max(10, issuesLines.length*4.5+6);
+  ensureSpace(boxHeight);
+  doc.rect(marginX, cursorY, pageWidth-2*marginX, boxHeight);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(m.repOtherIssues ? 20 : 130);
+  doc.text(issuesLines, marginX+4, cursorY+6);
+  cursorY += boxHeight + 8;
+
+  doc.setFontSize(8); doc.setTextColor(140); doc.setFont('helvetica','normal');
+  doc.text('IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative', pageWidth/2, pageHeight-10, {align:'center'});
+}
+
+window.viewReportPdf = async function(){
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF){ throw new Error('PDF library (jsPDF) did not load — check your internet connection.'); }
+    const date = document.getElementById('reportDate').value || todayISO();
+    toast('Building PDF…');
+    const rd = await computeReportData(date);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'mm', format:'a4'});
+    if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
+    await drawReportPdf(doc, date, rd);
+    const filename = 'LoadOut_Report_'+date+'.pdf';
+    showPdfModal('Load-Out Report — '+date, doc, filename, currentReportHtml || buildReportHtml(date, rd));
+  }catch(err){
+    console.error(err);
+    toast('Could not build the PDF: '+err.message);
+  }
+}
+</script>
+</body>
+</html>
