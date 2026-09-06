@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (v15.0)</title>
+<title>Goods Outflow — Load-Out Control (2.3.3b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">v15.0</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.3b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -592,7 +592,7 @@
 
   <!-- ACTIVITY LOG VIEW (M01 / TL01 only) -->
   <section class="view" id="view-activity">
-    <div class="card">
+    <div class="card" id="activityDateCard">
       <h2>Activity Log</h2>
       <div class="subtext">Defaults to today. Use the date field to look up any other day.</div>
       <label class="field" style="max-width:220px;">
@@ -601,18 +601,31 @@
       </label>
     </div>
 
-    <div class="card">
+    <div class="card" id="activityMyStatusCard">
       <h2>Your activity</h2>
       <div id="activityMyStatus"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="activityMyTodayCard" style="display:none;">
+      <h2>Your activity today</h2>
+      <div class="subtext">Your own login/logout, and orders you've scanned, for today only.</div>
+      <div id="activityMyToday"></div>
+      <div id="activityMyOrderDetail" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card" id="activityCoworkerCard">
       <h2>Co-worker summary</h2>
-      <div class="subtext">Login/logout times and orders pending / delivered for the date above.</div>
+      <div class="subtext">Login/logout times and orders in transit / delivered for the date above.</div>
       <div id="activityUserSummary"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="activityOrderDetailCard">
+      <h2>Order detail by co-worker</h2>
+      <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it.</div>
+      <div id="activityOrderDetail"></div>
+    </div>
+
+    <div class="card" id="activityAllCard">
       <h2>All activity</h2>
       <div id="activityLogList"></div>
     </div>
@@ -1141,7 +1154,67 @@ function localDateOf(isoString){
   return local.toISOString().slice(0,10);
 }
 
+async function renderMyActivityToday(){
+  const date = todayISO();
+  const raw = await storeGet(storeKey('activityLog'));
+  let log = [];
+  try{ log = raw ? JSON.parse(raw) : []; }catch(e){ log = []; }
+  const myEvents = log.filter(e=>e.userCode===currentUserCode && localDateOf(e.ts)===date);
+  const fmtTime = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const logins = myEvents.filter(e=>e.event==='login').map(e=>e.ts).sort();
+  const logouts = myEvents.filter(e=>e.event==='logout').map(e=>e.ts).sort();
+
+  const day = await loadDay(date);
+  const inTransitOrders = [];
+  const deliveredOrders = [];
+  if(day){
+    day.records.forEach(r=>{
+      if(r.status==='delivered' && r.completedBy===currentUserCode){
+        deliveredOrders.push(r);
+      }else if(r.scannedBy===currentUserCode && r.status!=='delivered'){
+        inTransitOrders.push(r);
+      }
+    });
+  }
+
+  document.getElementById('activityMyToday').innerHTML =
+    '<div class="subtext" style="margin-bottom:6px;">Login: '+(logins.length ? logins.map(fmtTime).join(', ') : '—')+'</div>'
+    + '<div class="subtext" style="margin-bottom:12px;">Logout: '+(logouts.length ? logouts.map(fmtTime).join(', ') : '—')+'</div>'
+    + '<div class="scan-zone-driver">'
+    +   '<span class="zd-chip zone">In Transit: '+inTransitOrders.length+'</span>'
+    +   '<span class="zd-chip driver">Delivered: '+deliveredOrders.length+'</span>'
+    + '</div>';
+
+  const inTransitRows = inTransitOrders.length
+    ? inTransitOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.zone)+'</td></tr>').join('')
+    : '<tr><td colspan="2" style="text-align:center;color:#666;">None</td></tr>';
+  const deliveredRows = deliveredOrders.length
+    ? deliveredOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.zone)+'</td><td class="mono">'+(r.deliveredAt ? fmtTime(r.deliveredAt) : '—')+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="text-align:center;color:#666;">None</td></tr>';
+
+  document.getElementById('activityMyOrderDetail').innerHTML =
+    '<div class="zqr-section-label">IN TRANSIT ORDERS</div>'
+    + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Zone</th></tr></thead><tbody>'+inTransitRows+'</tbody></table>'
+    + '<div class="zqr-section-label" style="margin-top:14px;">DELIVERED ORDERS</div>'
+    + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Zone</th><th>Time Delivered</th></tr></thead><tbody>'+deliveredRows+'</tbody></table>';
+}
+
 async function renderActivityLog(){
+  const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode);
+  document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityMyStatusCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityCoworkerCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityOrderDetailCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityAllCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityMyTodayCard').style.display = isManagerView ? 'none' : 'block';
+
+  if(!isManagerView){
+    // Co-workers only ever see their own activity, for today only — no
+    // cross-user visibility, no date picker, no historical lookup.
+    await renderMyActivityToday();
+    return;
+  }
+
   if(!document.getElementById('activityDate').value) document.getElementById('activityDate').value = todayISO();
   const date = document.getElementById('activityDate').value || todayISO();
   const raw = await storeGet(storeKey('activityLog'));
@@ -1200,7 +1273,31 @@ async function renderActivityLog(){
       const delivered = completedCounts[code] || 0;
       return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+loginsText+'</td><td>'+logoutsText+'</td><td class="center">'+pending+'</td><td class="center">'+delivered+'</td></tr>';
     }).join('');
-    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login time(s)</th><th>Logout time(s)</th><th>Orders Pending</th><th>Orders Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>In Transit</th><th>Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+
+  // Order-level detail, consolidated across every co-worker for this date.
+  const detailBox = document.getElementById('activityOrderDetail');
+  const detailRows = [];
+  if(day){
+    day.records.forEach(r=>{
+      if(r.status==='delivered' && r.completedBy && !MANAGER_CODES.includes(r.completedBy)){
+        detailRows.push({ user:r.completedBy, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: r.deliveredAt ? fmtTime(r.deliveredAt) : '—' });
+      }else if(r.scannedBy && r.status!=='delivered' && !MANAGER_CODES.includes(r.scannedBy)){
+        detailRows.push({ user:r.scannedBy, orderNo:r.orderNo, zone:r.zone, status:'In Transit', time:'—' });
+      }
+    });
+  }
+  detailRows.sort((a,b)=> a.user.localeCompare(b.user) || a.orderNo.localeCompare(b.orderNo));
+  if(!detailRows.length){
+    detailBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No in-transit or delivered orders for '+date+'.</div>';
+  }else{
+    const rowsHtml = detailRows.map(d=>
+      '<tr><td class="mono">'+escapeHtml(d.user)+'</td><td class="mono">'+escapeHtml(d.orderNo)+'</td><td>'+escapeHtml(d.zone)+'</td>'
+      + '<td class="center"><span class="badge '+(d.status==='Delivered'?'delivered':'pending')+'">'+d.status+'</span></td>'
+      + '<td class="mono">'+d.time+'</td></tr>'
+    ).join('');
+    detailBox.innerHTML = '<table><thead><tr><th>User</th><th>Order No.</th><th>Zone</th><th>Status</th><th>Time</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>';
   }
 
   const box = document.getElementById('activityLogList');
@@ -1224,7 +1321,7 @@ function applyRoleUI(role){
     btn.style.display = (isManagerOnly && role==='coworker') ? 'none' : '';
   });
   const activityBtn = document.getElementById('activityTabBtn');
-  activityBtn.style.display = ACTIVITY_LOG_CODES.includes(currentUserCode) ? '' : 'none';
+  activityBtn.style.display = (ACTIVITY_LOG_CODES.includes(currentUserCode) || role==='coworker') ? '' : 'none';
   document.getElementById('userBadge').textContent = currentUserCode+' · '+(role==='manager' ? 'Manager' : 'Co-worker');
   showView(role==='manager' ? 'dashboard' : 'scan');
 }
@@ -1305,6 +1402,9 @@ async function forceLogoutDueToEviction(userCode){
   await localDelete('session:userRole:'+currentStoreCode);
   currentUserCode = null;
   currentUserRole = null;
+  currentScanOrder = null; // this device is a single-page app — without this, the next
+                            // person to log in here would inherit whatever scan state
+                            // was left in memory by whoever was logged in before them
   showLoginGate('user');
   document.getElementById('userCodeError').textContent = 'User ID '+userCode+' logged in on another device, so you were logged out here.';
 }
@@ -1348,6 +1448,7 @@ async function forceLogoutDueToInactivity(){
   await localDelete('session:userRole:'+currentStoreCode);
   currentUserCode = null;
   currentUserRole = null;
+  currentScanOrder = null;
   showLoginGate('user');
   document.getElementById('userCodeError').textContent = 'Logged out after 30 minutes of inactivity.';
 }
@@ -1359,8 +1460,10 @@ async function completeLogin(){
   await restoreInProgressScan();
   applyRoleUI(currentUserRole);
   startInactivityWatch();
+  renderScanStages(); // always redraw the Scan page to match the current user's actual
+                       // state — whether that's a clean slate or their own resumed scan —
+                       // never leave a previous user's on-screen content sitting there
   if(currentScanOrder){
-    renderScanStages();
     showView('scan');
     toast('Resumed an in-progress scan from earlier today');
   }
@@ -1418,6 +1521,7 @@ document.getElementById('logoutBtn').addEventListener('click', async ()=>{
   await localDelete('session:userRole:'+currentStoreCode);
   currentUserCode = null;
   currentUserRole = null;
+  currentScanOrder = null;
   showLoginGate('user');
 });
 
@@ -1561,7 +1665,9 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       records.reduce((s,r)=>s+r.items,0)+' total items.';
 
     document.getElementById('formsDate').value = date;
+    document.getElementById('dashDate').value = date;
     await renderZoneAssignment();
+    refreshDashboard();
   }catch(err){
     console.error(err);
     statusEl.textContent = 'Could not read that file. Make sure it is a valid .xlsx/.csv export.';
@@ -1617,7 +1723,17 @@ async function onZoneAssignChange(e){
   if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 }
-document.getElementById('uploadDate').addEventListener('change', renderZoneAssignment);
+document.getElementById('uploadDate').addEventListener('change', async ()=>{
+  const date = document.getElementById('uploadDate').value;
+  // The Upload page's date drives Dashboard and ZQR Forms too, so picking a
+  // different day (including a past one) shows that same day's dashboard,
+  // assigned drivers, and forms everywhere at once — not just on Upload.
+  document.getElementById('dashDate').value = date;
+  document.getElementById('formsDate').value = date;
+  await renderZoneAssignment();
+  refreshDashboard();
+  renderFormsList();
+});
 
 function groupByZoneDriver(records){
   const map = {};
@@ -1655,7 +1771,13 @@ document.getElementById('clearDateBtn').addEventListener('click', async ()=>{
   await saveDatesIndex(dates);
 
   statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Cleared all data for '+date+'.</span>';
-  if(lastUploadDate===date){ lastUploadDate=null; lastUploadGroups=null; document.getElementById('uploadPreviewCard').style.display='none'; }
+  if(lastUploadDate===date){
+    lastUploadDate=null;
+    lastUploadGroups=null;
+    document.getElementById('uploadPreviewCard').style.display='none';
+    document.getElementById('uploadFile').value='';
+    document.getElementById('uploadStatus').innerHTML='';
+  }
   if(document.getElementById('formsDate').value===date) renderFormsList();
   if(document.getElementById('dashDate').value===date) refreshDashboard();
   if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
@@ -2063,16 +2185,23 @@ function parseZqrCode(raw){
 }
 
 /* ---- Recover in-progress scan work if the app reloads/gets logged out mid-scan ----
-   Only restored if it was saved on today's date — a leftover scan from a
-   previous day is stale and gets discarded, per spec. */
+   Scoped to the specific user who started it — if a different person logs
+   in next, they must never be prompted to finish someone else's scan; the
+   order just sits correctly as in-transit until its own scanner (or anyone
+   who deliberately scans its ZQR) completes it. Also only restored if it
+   was saved on today's date — a leftover scan from a previous day is stale
+   and gets discarded. */
 async function saveInProgressScan(){
-  await storeSet(storeKey('inProgressScan'), JSON.stringify({ savedOn: todayISO(), scanOrder: currentScanOrder }));
+  await storeSet(storeKey('inProgressScan:'+currentUserCode), JSON.stringify({ savedOn: todayISO(), scanOrder: currentScanOrder }));
 }
 async function clearInProgressScan(){
-  await storeDelete(storeKey('inProgressScan'));
+  await storeDelete(storeKey('inProgressScan:'+currentUserCode));
 }
 async function restoreInProgressScan(){
-  const raw = await storeGet(storeKey('inProgressScan'));
+  currentScanOrder = null; // always start from a clean slate before checking — this is a
+                            // single-page app, so nothing from a previous user's session
+                            // should ever carry over unless it's genuinely this user's own
+  const raw = await storeGet(storeKey('inProgressScan:'+currentUserCode));
   if(!raw) return;
   try{
     const saved = JSON.parse(raw);
