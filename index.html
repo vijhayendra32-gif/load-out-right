@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (v8.0)</title>
+<title>Goods Outflow — Load-Out Control (v15.0)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -55,10 +55,6 @@
   .login-gate{
     min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding:24px; background:var(--bg); gap:16px;
-  }
-  .firebase-setup-banner{
-    max-width:420px; width:100%; background:var(--warning-soft); color:var(--warning);
-    border:1px solid var(--warning); border-radius:10px; padding:12px 16px; font-size:12.5px; font-weight:600; line-height:1.5;
   }
   .login-card{
     background:var(--surface); border:1px solid var(--line); border-radius:14px;
@@ -318,9 +314,6 @@
 
 <!-- LOGIN GATE -->
 <div id="loginGate" class="login-gate">
-  <div id="firebaseSetupBanner" class="firebase-setup-banner" style="display:none;">
-    ⚠️ Firebase isn't set up yet, so this device is running standalone (its own data only, not shared with other devices). Edit FIREBASE_CONFIG near the top of this file's &lt;script&gt; section, then re-share the file.
-  </div>
   <div class="login-card" id="storeCodeCard">
     <div class="login-brand">IKEA — Goods Outflow</div>
     <h2>Enter Store Code</h2>
@@ -345,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">v8.0</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">v15.0</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -475,11 +468,11 @@
   <section class="view" id="view-scan">
     <div class="card">
       <h2>Scan &amp; confirm delivery</h2>
-      <div class="subtext">Step 1 — scan the Order No. Step 2 — scan the ZQR at the zone to confirm.</div>
+      <div class="subtext">Step 1 — scan the Order No. or the CDUID. Step 2 — scan the ZQR at the zone to confirm.</div>
 
       <label class="field">
         <span class="lbl">Scanner input</span>
-        <input type="text" id="scanInput" placeholder="Scan or type a code, then press Enter" autocomplete="off"/>
+        <input type="text" id="scanInput" autocomplete="off"/>
       </label>
       <div class="btn-row" style="margin-bottom:16px;">
         <button class="btn btn-ghost" id="resetScanBtn">Reset</button>
@@ -601,7 +594,26 @@
   <section class="view" id="view-activity">
     <div class="card">
       <h2>Activity Log</h2>
-      <div class="subtext">Login and logout times for every user code, most recent first.</div>
+      <div class="subtext">Defaults to today. Use the date field to look up any other day.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="activityDate"/>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Your activity</h2>
+      <div id="activityMyStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Co-worker summary</h2>
+      <div class="subtext">Login/logout times and orders pending / delivered for the date above.</div>
+      <div id="activityUserSummary"></div>
+    </div>
+
+    <div class="card">
+      <h2>All activity</h2>
       <div id="activityLogList"></div>
     </div>
   </section>
@@ -843,7 +855,8 @@ const HEADER_ALIASES = {
   zone: ['zone','zonebay','bay','zonebayno'],
   suburb: ['suburb','location','suburblocation','deliverysuburb'],
   items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount'],
-  details: ['details','detail','notes','note','description']
+  details: ['details','detail','notes','note','description'],
+  cduid: ['cduid','cdu','cduno','cduidno','cduidnumber','cdunumber']
 };
 function detectColumns(headerRow){
   const map = {};
@@ -890,7 +903,7 @@ function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   if(name==='forms') renderFormsList();
-  if(name==='scan') focusScanInput();
+  if(name==='scan') focusActiveInput();
   if(name==='dashboard'){
     refreshDashboard();
     if(dashboardInterval) clearInterval(dashboardInterval);
@@ -927,7 +940,7 @@ function checkDateRollover(){
     // still sitting on the OLD "today" should advance to the new one —
     // fields the user deliberately set to a different/past date are left alone.
     let uploadDateChanged = false;
-    ['dashDate','uploadDate','formsDate','recordsDate','reportDate'].forEach(id=>{
+    ['dashDate','uploadDate','formsDate','recordsDate','reportDate','activityDate'].forEach(id=>{
       const el = document.getElementById(id);
       if(el && el.value === lastKnownToday){
         el.value = freshToday;
@@ -1098,6 +1111,7 @@ async function initApp(){
   document.getElementById('recordsDate').value = t;
   document.getElementById('dashDate').value = t;
   document.getElementById('reportDate').value = t;
+  document.getElementById('activityDate').value = t;
   await cleanupOldData();
   refreshDashboard();
   dashboardInterval = setInterval(refreshDashboard, 3000);
@@ -1120,23 +1134,89 @@ async function logActivity(userCode, event){
   await storeSet(storeKey('activityLog'), JSON.stringify(log));
 }
 
+function localDateOf(isoString){
+  const d = new Date(isoString);
+  const tz = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - tz*60000);
+  return local.toISOString().slice(0,10);
+}
+
 async function renderActivityLog(){
+  if(!document.getElementById('activityDate').value) document.getElementById('activityDate').value = todayISO();
+  const date = document.getElementById('activityDate').value || todayISO();
   const raw = await storeGet(storeKey('activityLog'));
   let log = [];
   try{ log = raw ? JSON.parse(raw) : []; }catch(e){ log = []; }
+
+  // "Your activity" — the viewing manager's own most recent login/logout,
+  // independent of the date filter (this is a personal status line, not a report).
+  const myStatusBox = document.getElementById('activityMyStatus');
+  const myEvents = log.filter(e=>e.userCode===currentUserCode).sort((a,b)=>a.ts.localeCompare(b.ts));
+  const myLastLogin = [...myEvents].reverse().find(e=>e.event==='login');
+  const myLastLogout = [...myEvents].reverse().find(e=>e.event==='logout');
+  const fmtFull = (iso)=> { const d=new Date(iso); return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); };
+  myStatusBox.innerHTML =
+    '<div class="subtext" style="margin-bottom:6px;">Your last login was '+(myLastLogin ? fmtFull(myLastLogin.ts) : '—')+'.</div>'
+    + '<div class="subtext" style="margin-bottom:0;">Your last logout was '+(myLastLogout ? fmtFull(myLastLogout.ts) : '—')+'.</div>';
+
+  // Everything below is scoped to the selected date and excludes managers —
+  // co-worker activity only.
+  const filtered = log.filter(e => localDateOf(e.ts) === date && !MANAGER_CODES.includes(e.userCode));
+
+  const day = await loadDay(date);
+  const completedCounts = {};
+  const pendingCounts = {};
+  if(day){
+    day.records.forEach(r=>{
+      if(r.status==='delivered' && r.completedBy){
+        completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + 1;
+      }else if(r.scannedBy && r.status!=='delivered'){
+        // scanned (picked up) by this user but not yet completed today
+        pendingCounts[r.scannedBy] = (pendingCounts[r.scannedBy]||0) + 1;
+      }
+    });
+  }
+  const userMap = {};
+  filtered.forEach(e=>{
+    if(!userMap[e.userCode]) userMap[e.userCode] = { logins:[], logouts:[] };
+    (e.event==='login' ? userMap[e.userCode].logins : userMap[e.userCode].logouts).push(e.ts);
+  });
+  Object.keys(completedCounts).concat(Object.keys(pendingCounts)).forEach(code=>{
+    if(MANAGER_CODES.includes(code)) return;
+    if(!userMap[code]) userMap[code] = { logins:[], logouts:[] };
+  });
+
+  const fmtTime = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const userCodes = Object.keys(userMap).sort();
+  const summaryBox = document.getElementById('activityUserSummary');
+  if(!userCodes.length){
+    summaryBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No co-worker activity recorded for '+date+'.</div>';
+  }else{
+    const rows = userCodes.map(code=>{
+      const u = userMap[code];
+      const loginsText = u.logins.length ? u.logins.sort().map(fmtTime).join(', ') : '—';
+      const logoutsText = u.logouts.length ? u.logouts.sort().map(fmtTime).join(', ') : '—';
+      const pending = pendingCounts[code] || 0;
+      const delivered = completedCounts[code] || 0;
+      return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+loginsText+'</td><td>'+logoutsText+'</td><td class="center">'+pending+'</td><td class="center">'+delivered+'</td></tr>';
+    }).join('');
+    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login time(s)</th><th>Logout time(s)</th><th>Orders Pending</th><th>Orders Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+
   const box = document.getElementById('activityLogList');
-  if(!log.length){
-    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">No login/logout activity recorded yet.</div>';
+  if(!filtered.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">No co-worker login/logout activity recorded for '+date+'.</div>';
     return;
   }
-  const rows = log.slice().reverse().map(e=>{
+  const rows2 = filtered.slice().reverse().map(e=>{
     const d = new Date(e.ts);
     return '<tr><td class="mono">'+escapeHtml(e.userCode)+'</td>'
       + '<td><span class="badge '+(e.event==='login'?'delivered':'pending')+'">'+(e.event==='login'?'Login':'Logout')+'</span></td>'
-      + '<td class="mono">'+d.toLocaleDateString()+' '+d.toLocaleTimeString()+'</td></tr>';
+      + '<td class="mono">'+d.toLocaleTimeString()+'</td></tr>';
   }).join('');
-  box.innerHTML = '<table><thead><tr><th>User</th><th>Event</th><th>Timestamp</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  box.innerHTML = '<table><thead><tr><th>User</th><th>Event</th><th>Time</th></tr></thead><tbody>'+rows2+'</tbody></table>';
 }
+document.getElementById('activityDate').addEventListener('change', renderActivityLog);
 
 function applyRoleUI(role){
   document.querySelectorAll('nav.tabs button[data-view]').forEach(btn=>{
@@ -1166,12 +1246,119 @@ function showLoginGate(stage){
   }
 }
 
+/* ---- Only one device may be logged in as a given user code at a time.
+   Logging in again with the same code takes over the slot immediately —
+   the device that was previously logged in as that code notices (via its
+   periodic heartbeat check) that it no longer holds the slot and logs
+   itself out automatically, recording a matching logout in the Activity
+   Log so each user only ever shows one login at a time. ---- */
+const HEARTBEAT_INTERVAL_MS = 30000;
+let sessionHeartbeatTimer = null;
+let deviceId = null;
+async function getDeviceId(){
+  if(deviceId) return deviceId;
+  let id = await localGet('deviceId');
+  if(!id){
+    id = 'dev-'+Date.now()+'-'+Math.random().toString(36).slice(2,10);
+    await localSet('deviceId', id);
+  }
+  deviceId = id;
+  return id;
+}
+
+async function claimUserCodeSlot(userCode){
+  await storeSet(storeKey('activeSessions/'+userCode), JSON.stringify({ ts: Date.now(), deviceId: await getDeviceId() }));
+}
+async function releaseUserCodeSlot(userCode){
+  await storeDelete(storeKey('activeSessions/'+userCode));
+}
+/* Has someone else since logged in with this same user code, taking over the
+   slot? If so this device no longer legitimately holds it and must log out —
+   this is what makes "log in again = kick the first login out" work, and
+   keeps the Activity Log to one clean login/logout pair per user at a time. */
+async function stillHoldsSlot(userCode){
+  const raw = await storeGet(storeKey('activeSessions/'+userCode));
+  if(!raw) return true; // nothing there — don't force a logout over a transient gap
+  try{
+    const saved = JSON.parse(raw);
+    return !saved.deviceId || saved.deviceId === await getDeviceId();
+  }catch(e){ return true; }
+}
+function startSessionHeartbeat(userCode){
+  stopSessionHeartbeat();
+  sessionHeartbeatTimer = setInterval(async ()=>{
+    if(await stillHoldsSlot(userCode)){
+      await claimUserCodeSlot(userCode); // refresh our own heartbeat timestamp
+    }else{
+      await forceLogoutDueToEviction(userCode); // someone else logged in with our code — we're kicked
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+function stopSessionHeartbeat(){
+  if(sessionHeartbeatTimer){ clearInterval(sessionHeartbeatTimer); sessionHeartbeatTimer = null; }
+}
+async function forceLogoutDueToEviction(userCode){
+  stopSessionHeartbeat();
+  stopInactivityWatch();
+  await logActivity(userCode, 'logout');
+  await localDelete('session:userCode:'+currentStoreCode);
+  await localDelete('session:userRole:'+currentStoreCode);
+  currentUserCode = null;
+  currentUserRole = null;
+  showLoginGate('user');
+  document.getElementById('userCodeError').textContent = 'User ID '+userCode+' logged in on another device, so you were logged out here.';
+}
+window.addEventListener('beforeunload', ()=>{
+  // best-effort logout note on a clean tab close
+  if(currentUserCode) logActivity(currentUserCode, 'logout');
+});
+
+/* ---- Auto-logout after 30 minutes of inactivity, for every user level.
+   "Activity" is any click, tap, keystroke, or scan (scans fire the same
+   input/keydown events as typing) anywhere in the app while logged in. ---- */
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+const INACTIVITY_CHECK_INTERVAL_MS = 30000;
+let lastActivityTime = Date.now();
+let inactivityCheckTimer = null;
+
+function recordActivity(){ lastActivityTime = Date.now(); }
+['click','keydown','touchstart','input'].forEach(evt=>{
+  document.addEventListener(evt, recordActivity, {passive:true});
+});
+
+function startInactivityWatch(){
+  stopInactivityWatch();
+  lastActivityTime = Date.now();
+  inactivityCheckTimer = setInterval(()=>{
+    if(Date.now() - lastActivityTime > INACTIVITY_TIMEOUT_MS) forceLogoutDueToInactivity();
+  }, INACTIVITY_CHECK_INTERVAL_MS);
+}
+function stopInactivityWatch(){
+  if(inactivityCheckTimer){ clearInterval(inactivityCheckTimer); inactivityCheckTimer = null; }
+}
+async function forceLogoutDueToInactivity(){
+  const userCode = currentUserCode;
+  stopSessionHeartbeat();
+  stopInactivityWatch();
+  if(userCode){
+    await logActivity(userCode, 'logout');
+    await releaseUserCodeSlot(userCode);
+  }
+  await localDelete('session:userCode:'+currentStoreCode);
+  await localDelete('session:userRole:'+currentStoreCode);
+  currentUserCode = null;
+  currentUserRole = null;
+  showLoginGate('user');
+  document.getElementById('userCodeError').textContent = 'Logged out after 30 minutes of inactivity.';
+}
+
 async function completeLogin(){
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
   await initApp();
   await restoreInProgressScan();
   applyRoleUI(currentUserRole);
+  startInactivityWatch();
   if(currentScanOrder){
     renderScanStages();
     showView('scan');
@@ -1202,10 +1389,13 @@ document.getElementById('userCodeSubmit').addEventListener('click', async ()=>{
     document.getElementById('userCodeError').textContent = 'Unrecognised user code.';
     return;
   }
+  document.getElementById('userCodeError').textContent = '';
   currentUserCode = val;
   currentUserRole = role;
   await localSet('session:userCode:'+currentStoreCode, val);
   await localSet('session:userRole:'+currentStoreCode, role);
+  await claimUserCodeSlot(val); // takes over the slot — kicks out any other device logged in as this code
+  startSessionHeartbeat(val);
   await logActivity(val, 'login');
   await completeLogin();
 });
@@ -1218,7 +1408,12 @@ document.getElementById('changeStoreBtn').addEventListener('click', ()=>{
   showLoginGate('store');
 });
 document.getElementById('logoutBtn').addEventListener('click', async ()=>{
-  if(currentUserCode) await logActivity(currentUserCode, 'logout');
+  if(currentUserCode){
+    await logActivity(currentUserCode, 'logout');
+    await releaseUserCodeSlot(currentUserCode);
+  }
+  stopSessionHeartbeat();
+  stopInactivityWatch();
   await localDelete('session:userCode:'+currentStoreCode);
   await localDelete('session:userRole:'+currentStoreCode);
   currentUserCode = null;
@@ -1227,18 +1422,15 @@ document.getElementById('logoutBtn').addEventListener('click', async ()=>{
 });
 
 window.addEventListener('DOMContentLoaded', async ()=>{
-  if(!fbReady) document.getElementById('firebaseSetupBanner').style.display = 'block';
+  // The store code (this device's location) is remembered, but the user code
+  // is deliberately asked for every single time — every user level, no
+  // exceptions — so a shared device always shows who's actually using it
+  // right now rather than silently continuing as whoever used it last.
   const savedStore = await localGet('session:storeCode');
   if(savedStore && VALID_STORE_CODES.includes(savedStore)){
     currentStoreCode = savedStore;
-    const savedUser = await localGet('session:userCode:'+savedStore);
-    const savedRole = await localGet('session:userRole:'+savedStore);
-    if(savedUser && savedRole){
-      currentUserCode = savedUser;
-      currentUserRole = savedRole;
-      await completeLogin();
-      return;
-    }
+    await localDelete('session:userCode:'+savedStore);
+    await localDelete('session:userRole:'+savedStore);
     showLoginGate('user');
     return;
   }
@@ -1318,6 +1510,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         id: uid(),
         category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
         orderNo,
+        cduid: cols.cduid!==undefined ? String(r[cols.cduid]||'').trim() : '',
         driverNo: String(r[cols.driverNo]||'').trim(),
         driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
         zone: cols.zone!==undefined ? String(r[cols.zone]||'').trim() : '',
@@ -1330,7 +1523,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       };
       // Skip exact duplicates — every source column value must match another
       // already-seen row for it to be dropped (not just a repeated order no.).
-      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
+      const signature = [rec.category, rec.orderNo, rec.cduid, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
       if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
       seenSignatures.add(signature);
 
@@ -1777,20 +1970,72 @@ window.printForms = async function(date, idx){
 
 /* ============================= SCAN VIEW ============================= */
 const scanInput = document.getElementById('scanInput');
-scanInput.addEventListener('keydown', (e)=>{
-  if(e.key==='Enter'){
-    e.preventDefault();
-    const val = scanInput.value.trim();
-    scanInput.value='';
-    if(val) handleScan(val);
+
+/* Hardware barcode/QR scanners "type" into the focused field far faster than
+   a human ever does — characters land only a few ms apart, with no gap in
+   the whole sequence anywhere near typing speed. We use that to auto-submit
+   the instant a scan finishes, with no Enter/button needed, while a human
+   manually typing the same field still needs to press Enter — a single
+   normal-speed gap anywhere in what they typed is enough to tell the two apart.
+   Reusable so it can be attached to whichever field is active for the
+   current stage, not just one fixed input. */
+const SCAN_MAX_GAP_MS = 40;   // any single gap slower than this means it wasn't a scan
+const SCAN_SETTLE_MS = 80;    // pause after the last character before deciding
+const SCAN_MIN_LENGTH = 4;    // ignore very short input — avoids false positives on 1-2 keystrokes
+
+function attachScanDetection(inputEl, onSubmit){
+  let hadSlowGap = false, lastCharTime = null, timer = null;
+
+  function resetTracking(){
+    hadSlowGap = false;
+    lastCharTime = null;
   }
-});
+
+  inputEl.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      clearTimeout(timer);
+      const val = inputEl.value.trim();
+      inputEl.value = '';
+      resetTracking();
+      if(val) onSubmit(val);
+    }
+  });
+
+  inputEl.addEventListener('input', ()=>{
+    const now = Date.now();
+    if(inputEl.value.length === 0){
+      // field is empty (e.g. backspaced clean) — nothing typed yet, start fresh
+      resetTracking();
+      return;
+    }
+    if(lastCharTime !== null && (now - lastCharTime) > SCAN_MAX_GAP_MS) hadSlowGap = true;
+    lastCharTime = now;
+
+    clearTimeout(timer);
+    timer = setTimeout(()=>{
+      const val = inputEl.value.trim();
+      if(val.length >= SCAN_MIN_LENGTH && !hadSlowGap){
+        // every character arrived in one fast, uniform burst — this was a scan. Auto-submit.
+        inputEl.value = '';
+        resetTracking();
+        onSubmit(val);
+      }
+      // Otherwise: too short to judge yet, or a slow gap was already seen — leave
+      // hadSlowGap/lastCharTime exactly as they are. Resetting here was the bug:
+      // it made every pause look like "the first character of a new scan", so
+      // slow human typing could still end up looking gap-free by the time enough
+      // characters had accumulated, and fire early. Now, once a slow gap is seen,
+      // it stays flagged for the rest of this entry — only Enter will submit it.
+    }, SCAN_SETTLE_MS);
+  });
+}
+attachScanDetection(scanInput, handleScan);
 
 document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
   currentScanOrder = null;
   await clearInProgressScan();
   renderScanStages();
-  scanInput.focus();
 });
 
 async function handleScan(raw){
@@ -1839,18 +2084,22 @@ async function restoreInProgressScan(){
   }catch(e){ await clearInProgressScan(); }
 }
 
+function matchesScannedCode(r, code){
+  return r.orderNo===code || (r.cduid && r.cduid===code);
+}
+
 async function handleOrderScan(raw){
   const parsed = parseOrderCode(raw);
   let date = parsed.date || document.getElementById('formsDate').value || todayISO();
   let day = await loadDay(date);
-  let rec = day ? day.records.find(r=>r.orderNo===parsed.orderNo) : null;
+  let rec = day ? day.records.find(r=>matchesScannedCode(r, parsed.orderNo)) : null;
 
   if(!rec){
-    // fall back: search all dates for this order number
+    // fall back: search all dates for this order number or CDUID
     const dates = await loadDatesIndex();
     for(const d of dates){
       const dObj = await loadDay(d);
-      const found = dObj && dObj.records.find(r=>r.orderNo===parsed.orderNo);
+      const found = dObj && dObj.records.find(r=>matchesScannedCode(r, parsed.orderNo));
       if(found){ rec = found; date = d; day = dObj; break; }
     }
   }
@@ -1859,15 +2108,22 @@ async function handleOrderScan(raw){
     beep(220,220);
     return;
   }
+
+  // Update the UI and refocus the scanner input FIRST, right away — before any
+  // saving happens. Waiting on network writes here is exactly what was making
+  // the focus call land too late for mobile browsers to honour it.
   currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
                         category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
+  renderScanStages();
+
+  // Now save in the background — doesn't block the UI update above.
   if(rec.status==='pending'){
     rec.status = 'in-transit';
     rec.inTransitAt = new Date().toISOString();
-    await saveDay(date, day);
+    rec.scannedBy = currentUserCode;
+    saveDay(date, day);
   }
-  await saveInProgressScan();
-  renderScanStages();
+  saveInProgressScan();
 }
 
 async function handleZqrScan(raw){
@@ -1880,25 +2136,30 @@ async function handleZqrScan(raw){
   }
   const match = z.zone===currentScanOrder.zone && z.dateCode===formatDDMMYY(currentScanOrder.date);
   if(match){
-    // mark delivered
-    const day = await loadDay(currentScanOrder.date);
-    const rec = day.records.find(r=>r.id===currentScanOrder.recId);
-    if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); await saveDay(currentScanOrder.date, day); }
+    // Show the confirmation immediately — the match is already verified above,
+    // so the UI doesn't need to wait on the database write to confirm it.
+    const savedOrder = currentScanOrder;
     beep(1046,140);
     stageEl.innerHTML = renderStageB('match');
-    await clearInProgressScan();
-    setTimeout(()=>{ currentScanOrder=null; renderScanStages(); scanInput.focus(); }, 1600);
+    setTimeout(()=>{ currentScanOrder=null; renderScanStages(); }, 1600);
+
+    // Save in the background.
+    (async ()=>{
+      const day = await loadDay(savedOrder.date);
+      const rec = day && day.records.find(r=>r.id===savedOrder.recId);
+      if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); rec.completedBy = currentUserCode; await saveDay(savedOrder.date, day); }
+      await clearInProgressScan();
+    })();
   }else{
     beep(180,320);
     stageEl.innerHTML = renderStageB('mismatch');
+    setupZqrInput(); // fresh input node — needs its scan-detection listeners and focus reattached
   }
 }
 
 function renderStageB(result){
   const manualRow = '<div class="manual-zqr-row">'
-    + '<input type="text" id="manualZqrInput" placeholder="Or type the zone code, e.g. 1-310726" autocomplete="off" '
-    + 'onkeydown="if(event.key===\'Enter\'){ event.preventDefault(); handleManualZqr(); }"/>'
-    + '<button class="btn btn-primary" onclick="handleManualZqr()">Confirm</button>'
+    + '<input type="text" id="manualZqrInput" autocomplete="off"/>'
     + '</div>';
   if(result==='match'){
     return '<div class="scan-stage step-b match"><div class="scan-result-big" style="color:var(--success);">DELIVERED ✓</div>'
@@ -1913,18 +2174,47 @@ function renderStageB(result){
     + manualRow + '</div>';
 }
 
-window.handleManualZqr = function(){
-  const input = document.getElementById('manualZqrInput');
-  if(!input) return;
-  const val = input.value.trim();
-  if(!val) return;
-  input.value = '';
-  handleZqrScan(val);
+/* Which input should currently have focus: the stage-1 field while waiting
+   for an order, or the stage-2 field once an order's been scanned and we're
+   waiting on the ZQR. This is what makes focus actually land in "the second
+   scan column" rather than staying on the stage-1 field the whole time. */
+function focusActiveInput(){
+  if(currentScanOrder){
+    const z = document.getElementById('manualZqrInput');
+    if(z) z.focus();
+  }else{
+    if(scanInput) scanInput.focus();
+  }
 }
 
-function focusScanInput(){
-  const input = document.getElementById('scanInput');
-  if(input) setTimeout(()=>input.focus(), 30);
+function sharedBlurRecapture(e){
+  const goingTo = e.relatedTarget;
+  const stayAway = goingTo && (goingTo.id==='scanInput' || goingTo.id==='manualZqrInput' || goingTo.tagName==='BUTTON' || goingTo.tagName==='SELECT' || goingTo.tagName==='TEXTAREA');
+  if(stayAway) return;
+  if(!document.getElementById('view-scan').classList.contains('active')) return;
+  setTimeout(()=>{
+    if(document.getElementById('view-scan').classList.contains('active')) focusActiveInput();
+  }, 150);
+}
+scanInput.addEventListener('blur', sharedBlurRecapture);
+
+/* Manual fallback: some mobile browsers block programmatic focus outright
+   unless it happens inside a direct tap — tapping anywhere on the scan card
+   (outside the manual-entry box/buttons) refocuses whichever input is active. */
+document.getElementById('view-scan').addEventListener('click', (e)=>{
+  if(e.target.closest('#manualZqrInput, button, select, textarea')) return;
+  focusActiveInput();
+});
+
+/* Attaches the same scan-vs-typing detection used on the stage-1 field to
+   the stage-2 field each time it's freshly rendered (it's recreated in the
+   DOM on every render, so listeners need reattaching every time). */
+function setupZqrInput(){
+  const input = document.getElementById('manualZqrInput');
+  if(!input) return;
+  input.addEventListener('blur', sharedBlurRecapture);
+  attachScanDetection(input, (val)=>handleZqrScan(val));
+  input.focus();
 }
 
 function renderScanStages(){
@@ -1933,7 +2223,7 @@ function renderScanStages(){
   if(!currentScanOrder){
     stageA.style.display='none';
     stageBWrap.innerHTML='';
-    focusScanInput();
+    focusActiveInput();
     return;
   }
   stageA.style.display='block';
@@ -1947,7 +2237,7 @@ function renderScanStages(){
     + '<div class="subtext" style="margin-bottom:0;">'+escapeHtml(currentScanOrder.suburb)+' · '+currentScanOrder.items+' items</div>'
     + '</div>';
   stageBWrap.innerHTML = renderStageB(null);
-  focusScanInput();
+  setupZqrInput();
 }
 
 /* ============================= SEARCH VIEW ============================= */
