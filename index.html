@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.3.3b)</title>
+<title>Goods Outflow — Load-Out Control (2.3.5b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.3b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.5b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -868,8 +868,7 @@ const HEADER_ALIASES = {
   zone: ['zone','zonebay','bay','zonebayno'],
   suburb: ['suburb','location','suburblocation','deliverysuburb'],
   items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount'],
-  details: ['details','detail','notes','note','description'],
-  cduid: ['cduid','cdu','cduno','cduidno','cduidnumber','cdunumber']
+  details: ['details','detail','notes','note','description']
 };
 function detectColumns(headerRow){
   const map = {};
@@ -1614,7 +1613,6 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         id: uid(),
         category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
         orderNo,
-        cduid: cols.cduid!==undefined ? String(r[cols.cduid]||'').trim() : '',
         driverNo: String(r[cols.driverNo]||'').trim(),
         driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
         zone: cols.zone!==undefined ? String(r[cols.zone]||'').trim() : '',
@@ -1627,7 +1625,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       };
       // Skip exact duplicates — every source column value must match another
       // already-seen row for it to be dropped (not just a repeated order no.).
-      const signature = [rec.category, rec.orderNo, rec.cduid, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
+      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
       if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
       seenSignatures.add(signature);
 
@@ -2213,27 +2211,32 @@ async function restoreInProgressScan(){
   }catch(e){ await clearInProgressScan(); }
 }
 
-function matchesScannedCode(r, code){
-  return r.orderNo===code || (r.cduid && r.cduid===code);
+const ORDER_NO_LENGTH = 9;
+function extractOrderNoFromScan(raw){
+  // A CDUID scan starts with the same digits as the Order No, with extra
+  // digits appended after — truncating anything longer resolves both a
+  // plain Order No. scan and a CDUID scan to the exact same order.
+  return raw.length > ORDER_NO_LENGTH ? raw.slice(0, ORDER_NO_LENGTH) : raw;
 }
 
 async function handleOrderScan(raw){
   const parsed = parseOrderCode(raw);
+  const lookupCode = extractOrderNoFromScan(parsed.orderNo);
   let date = parsed.date || document.getElementById('formsDate').value || todayISO();
   let day = await loadDay(date);
-  let rec = day ? day.records.find(r=>matchesScannedCode(r, parsed.orderNo)) : null;
+  let rec = day ? day.records.find(r=>r.orderNo===lookupCode) : null;
 
   if(!rec){
-    // fall back: search all dates for this order number or CDUID
+    // fall back: search all dates for this order number
     const dates = await loadDatesIndex();
     for(const d of dates){
       const dObj = await loadDay(d);
-      const found = dObj && dObj.records.find(r=>matchesScannedCode(r, parsed.orderNo));
+      const found = dObj && dObj.records.find(r=>r.orderNo===lookupCode);
       if(found){ rec = found; date = d; day = dObj; break; }
     }
   }
   if(!rec){
-    toast('Order '+parsed.orderNo+' not found');
+    toast('Order '+lookupCode+' not found');
     beep(220,220);
     return;
   }
