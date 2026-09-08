@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.3.6b)</title>
+<title>Goods Outflow — Load-Out Control (2.3.7b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.6b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.7b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -1163,8 +1163,8 @@ async function initApp(){
 /* ============================= LOGIN (store code + user code) ============================= */
 const VALID_STORE_CODES = ['557'];
 const MANAGER_CODES = ['M01','TL01','LL01'];
-const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10'];
-const MANAGER_ONLY_VIEWS = ['dashboard','upload','forms','report'];
+const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03'];
+const MANAGER_ONLY_VIEWS = ['upload','forms','report'];
 const ACTIVITY_LOG_CODES = ['M01','TL01']; // LL01 is a manager but does NOT get this page
 
 async function logActivity(userCode, event){
@@ -1790,7 +1790,20 @@ document.getElementById('clearDateBtn').addEventListener('click', async ()=>{
     statusEl.textContent = 'No data found for '+date+'.';
     return;
   }
-  const ok = confirm('Delete all '+day.records.length+' order(s) and ZQR forms for '+date+'? This cannot be undone.');
+
+  // Once a report has been generated for this date, only manager-level users
+  // may delete its data — no exceptions, regardless of who's clicking this.
+  const manualData = await loadReportData(date);
+  if(manualData && manualData.reportGenerated && !MANAGER_CODES.includes(currentUserCode)){
+    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">A report has already been generated for '+date+'. Only a manager can delete data for this date now.</span>';
+    return;
+  }
+
+  const hasProgress = day.records.some(r=>r.status!=='pending');
+  const warning = hasProgress
+    ? 'Some orders for '+date+' have already been scanned — '+day.records.filter(r=>r.status==='in-transit').length+' in transit and '+day.records.filter(r=>r.status==='delivered').length+' delivered. That progress will be permanently lost. '
+    : '';
+  const ok = confirm(warning+'Delete all '+day.records.length+' order(s) and ZQR forms for '+date+'? This cannot be undone.');
   if(!ok) return;
 
   await storeDelete(storeKey('day:'+date));
@@ -2712,6 +2725,12 @@ document.getElementById('viewReportBtn').addEventListener('click', async ()=>{
     + '<button class="btn btn-ghost" onclick="printReport()">Print</button>'
     + '</div>' + currentReportHtml;
   document.getElementById('modalOverlay').classList.add('show');
+
+  // Once a report has been generated for a date, that date's data is locked
+  // against deletion by anyone without manager access (checked in Clear Data).
+  const manualData = await loadReportData(date);
+  manualData.reportGenerated = true;
+  await saveReportData(date, manualData);
 });
 
 window.printReport = function(){
