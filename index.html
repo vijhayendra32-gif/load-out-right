@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.3.7b)</title>
+<title>Goods Outflow — Load-Out Control (2.3.9b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.7b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.9b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -614,14 +614,14 @@
     </div>
 
     <div class="card" id="activityCoworkerCard">
-      <h2>Co-worker summary</h2>
-      <div class="subtext">Login/logout times and orders in transit / delivered for the date above.</div>
+      <h2>User summary</h2>
+      <div class="subtext">Login/logout times and orders in transit / delivered for the date above — all users.</div>
       <div id="activityUserSummary"></div>
     </div>
 
     <div class="card" id="activityOrderDetailCard">
-      <h2>Order detail by co-worker</h2>
-      <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it.</div>
+      <h2>Order detail by user</h2>
+      <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it — all users.</div>
       <div id="activityOrderDetail"></div>
     </div>
 
@@ -1261,9 +1261,10 @@ async function renderActivityLog(){
     '<div class="subtext" style="margin-bottom:6px;">Your last login was '+(myLastLogin ? fmtFull(myLastLogin.ts) : '—')+'.</div>'
     + '<div class="subtext" style="margin-bottom:0;">Your last logout was '+(myLastLogout ? fmtFull(myLastLogout.ts) : '—')+'.</div>';
 
-  // Everything below is scoped to the selected date and excludes managers —
-  // co-worker activity only.
+  // "All activity" below stays co-worker-only. The summary table and order
+  // detail table now show every user, managers included.
   const filtered = log.filter(e => localDateOf(e.ts) === date && !MANAGER_CODES.includes(e.userCode));
+  const allUsersLog = log.filter(e => localDateOf(e.ts) === date);
 
   const day = await loadDay(date);
   const completedCounts = {};
@@ -1279,12 +1280,11 @@ async function renderActivityLog(){
     });
   }
   const userMap = {};
-  filtered.forEach(e=>{
+  allUsersLog.forEach(e=>{
     if(!userMap[e.userCode]) userMap[e.userCode] = { logins:[], logouts:[] };
     (e.event==='login' ? userMap[e.userCode].logins : userMap[e.userCode].logouts).push(e.ts);
   });
   Object.keys(completedCounts).concat(Object.keys(pendingCounts)).forEach(code=>{
-    if(MANAGER_CODES.includes(code)) return;
     if(!userMap[code]) userMap[code] = { logins:[], logouts:[] };
   });
 
@@ -1292,7 +1292,7 @@ async function renderActivityLog(){
   const userCodes = Object.keys(userMap).sort();
   const summaryBox = document.getElementById('activityUserSummary');
   if(!userCodes.length){
-    summaryBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No co-worker activity recorded for '+date+'.</div>';
+    summaryBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No activity recorded for '+date+'.</div>';
   }else{
     const rows = userCodes.map(code=>{
       const u = userMap[code];
@@ -1305,14 +1305,14 @@ async function renderActivityLog(){
     summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>In Transit</th><th>Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
   }
 
-  // Order-level detail, consolidated across every co-worker for this date.
+  // Order-level detail, consolidated across every user for this date.
   const detailBox = document.getElementById('activityOrderDetail');
   const detailRows = [];
   if(day){
     day.records.forEach(r=>{
-      if(r.status==='delivered' && r.completedBy && !MANAGER_CODES.includes(r.completedBy)){
+      if(r.status==='delivered' && r.completedBy){
         detailRows.push({ user:r.completedBy, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: r.deliveredAt ? fmtTime(r.deliveredAt) : '—' });
-      }else if(r.scannedBy && r.status!=='delivered' && !MANAGER_CODES.includes(r.scannedBy)){
+      }else if(r.scannedBy && r.status!=='delivered'){
         detailRows.push({ user:r.scannedBy, orderNo:r.orderNo, zone:r.zone, status:'In Transit', time:'—' });
       }
     });
@@ -1344,10 +1344,15 @@ async function renderActivityLog(){
 }
 document.getElementById('activityDate').addEventListener('change', renderActivityLog);
 
+const EXTRA_FORMS_ACCESS_CODES = ['N01','N02','N03']; // these three get ZQR Forms on top of the usual co-worker access; CW01-CW10 do not
+
 function applyRoleUI(role){
   document.querySelectorAll('nav.tabs button[data-view]').forEach(btn=>{
-    const isManagerOnly = MANAGER_ONLY_VIEWS.includes(btn.dataset.view);
-    btn.style.display = (isManagerOnly && role==='coworker') ? 'none' : '';
+    const view = btn.dataset.view;
+    const isManagerOnly = MANAGER_ONLY_VIEWS.includes(view);
+    let hide = isManagerOnly && role==='coworker';
+    if(view==='forms' && EXTRA_FORMS_ACCESS_CODES.includes(currentUserCode)) hide = false;
+    btn.style.display = hide ? 'none' : '';
   });
   const activityBtn = document.getElementById('activityTabBtn');
   activityBtn.style.display = (ACTIVITY_LOG_CODES.includes(currentUserCode) || role==='coworker') ? '' : 'none';
