@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.3.9b)</title>
+<title>Goods Outflow — Load-Out Control (2.4.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.9b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.4.1b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -1158,6 +1158,7 @@ async function initApp(){
   refreshDashboard();
   dashboardInterval = setInterval(refreshDashboard, 3000);
   await renderZoneAssignment();
+  await showExistingUploadSummary(t);
 }
 
 /* ============================= LOGIN (store code + user code) ============================= */
@@ -1585,6 +1586,15 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   const statusEl = document.getElementById('uploadStatus');
   if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
   if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+
+  // Once a report has been generated for a date, that date's data is locked
+  // against re-upload entirely — no exceptions, regardless of who's logged in.
+  const existingReportData = await loadReportData(date);
+  if(existingReportData && existingReportData.reportGenerated){
+    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">A report has already been generated for '+date+'. This date is locked and can no longer be re-uploaded.</span>';
+    return;
+  }
+
   statusEl.textContent = 'Reading file…';
 
   try{
@@ -1766,7 +1776,32 @@ document.getElementById('uploadDate').addEventListener('change', async ()=>{
   await renderZoneAssignment();
   refreshDashboard();
   renderFormsList();
+  await showExistingUploadSummary(date);
 });
+
+/* Switching to a date that already has an upload should show that upload's
+   summary right away — not just leave whatever was last actively processed
+   on screen, and not require re-uploading the file to see it again. */
+async function showExistingUploadSummary(date){
+  const day = await loadDay(date);
+  const statusEl = document.getElementById('uploadStatus');
+  const previewCard = document.getElementById('uploadPreviewCard');
+  if(!day || !day.records.length){
+    statusEl.textContent = '';
+    previewCard.style.display = 'none';
+    lastUploadGroups = null;
+    lastUploadDate = null;
+    return;
+  }
+  const groups = groupByZoneDriver(day.records);
+  lastUploadGroups = groups;
+  lastUploadDate = date;
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Showing the existing upload for '+date+'.</span>';
+  previewCard.style.display = 'block';
+  document.getElementById('uploadSummaryText').textContent =
+    day.records.length+' orders across '+groups.length+' zone/driver group(s), '+
+    day.records.reduce((s,r)=>s+r.items,0)+' total items.';
+}
 
 function groupByZoneDriver(records){
   const map = {};
