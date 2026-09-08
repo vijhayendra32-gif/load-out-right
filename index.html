@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.3.5b)</title>
+<title>Goods Outflow — Load-Out Control (2.3.6b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -338,7 +338,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.5b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.3.6b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -782,6 +782,36 @@ async function loadDay(date){
 }
 async function saveDay(date, dayObj){
   await storeSet(storeKey('day:'+date), JSON.stringify(dayObj));
+}
+/* Multiple people can be editing the same day's data at once — a worker
+   marking an order delivered, a manager changing a zone assignment, another
+   worker starting a scan. A plain load-mutate-save is a race: if two of
+   these overlap, whichever save lands second wins and silently discards the
+   other's change (this is what was reverting deliveries back to in-transit).
+   Firebase's transaction() re-reads and retries automatically if the value
+   changed underneath it, so this makes every mutation to a day's data safe
+   regardless of what else is happening at the same time. Falls back to a
+   plain load-mutate-save when running standalone (no real concurrency risk
+   on a single device). */
+async function updateDayAtomic(date, mutateFn){
+  if(fbReady){
+    try{
+      const result = await fbDatabase.ref(fbSafeKey(storeKey('day:'+date))).transaction((currentRaw)=>{
+        let dayObj;
+        try{ dayObj = currentRaw ? JSON.parse(currentRaw) : null; }catch(e){ dayObj = null; }
+        if(!dayObj) return currentRaw; // nothing to mutate — abort without changing anything
+        mutateFn(dayObj);
+        return JSON.stringify(dayObj);
+      });
+      return !!(result && result.committed);
+    }catch(e){ console.error('atomic day update failed', e); return false; }
+  }else{
+    const day = await loadDay(date);
+    if(!day) return false;
+    mutateFn(day);
+    await saveDay(date, day);
+    return true;
+  }
 }
 async function loadReportData(date){
   const raw = await storeGet(storeKey('report:'+date));
@@ -1708,10 +1738,10 @@ async function onZoneAssignChange(e){
   const driverNo = e.target.dataset.driver;
   const zone = e.target.value;
   const date = document.getElementById('uploadDate').value || todayISO();
-  const day = await loadDay(date);
-  if(!day) return;
-  day.records.forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
-  await saveDay(date, day);
+  const ok = await updateDayAtomic(date, (day)=>{
+    day.records.forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
+  });
+  if(!ok) return;
   toast(zone ? 'Driver '+driverNo+' assigned to Zone '+zone : 'Driver '+driverNo+' unassigned');
   await renderZoneAssignment();
 
@@ -2250,10 +2280,16 @@ async function handleOrderScan(raw){
 
   // Now save in the background — doesn't block the UI update above.
   if(rec.status==='pending'){
-    rec.status = 'in-transit';
-    rec.inTransitAt = new Date().toISOString();
-    rec.scannedBy = currentUserCode;
-    saveDay(date, day);
+    const recId = rec.id;
+    const scannedBy = currentUserCode;
+    updateDayAtomic(date, (freshDay)=>{
+      const freshRec = freshDay.records.find(r=>r.id===recId);
+      if(freshRec && freshRec.status==='pending'){
+        freshRec.status = 'in-transit';
+        freshRec.inTransitAt = new Date().toISOString();
+        freshRec.scannedBy = scannedBy;
+      }
+    });
   }
   saveInProgressScan();
 }
@@ -2277,9 +2313,16 @@ async function handleZqrScan(raw){
 
     // Save in the background.
     (async ()=>{
-      const day = await loadDay(savedOrder.date);
-      const rec = day && day.records.find(r=>r.id===savedOrder.recId);
-      if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); rec.completedBy = currentUserCode; await saveDay(savedOrder.date, day); }
+      const recId = savedOrder.recId;
+      const completedBy = currentUserCode;
+      await updateDayAtomic(savedOrder.date, (freshDay)=>{
+        const freshRec = freshDay.records.find(r=>r.id===recId);
+        if(freshRec){
+          freshRec.status = 'delivered';
+          freshRec.deliveredAt = new Date().toISOString();
+          freshRec.completedBy = completedBy;
+        }
+      });
       await clearInProgressScan();
     })();
   }else{
