@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.4.1b)</title>
+<title>Goods Outflow — Load-Out Control (2.4.2b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -143,6 +143,7 @@
   .badge.pending{ background:var(--warning-soft); color:var(--warning); }
   .badge.in-transit{ background:var(--accent-soft); color:var(--accent); }
   .badge.delivered{ background:var(--success-soft); color:var(--success); }
+  .badge.netley-connect{ background:#EDE4FA; color:#7B3FE4; margin-left:6px; }
 
   table{ width:100%; border-collapse:collapse; font-size:14px; }
   th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); padding:8px 8px; border-bottom:1.5px solid var(--line); }
@@ -338,7 +339,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.4.1b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.4.2b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -2477,6 +2478,24 @@ document.getElementById('recordsDate').addEventListener('change', ()=>{
   if(searchHasRun) runSearch();
 });
 
+const N_CODES = ['N01','N02','N03'];
+function scannerOfRecord(r){
+  return r.completedBy || r.scannedBy || null;
+}
+function isNetleyConnectOrder(record, allRecords){
+  const who = scannerOfRecord(record);
+  if(!who) return false;
+  const isThisN = N_CODES.includes(who);
+  return allRecords.some(other=>{
+    if(other===record) return false;
+    if(other.orderNo !== record.orderNo) return false;
+    const otherWho = scannerOfRecord(other);
+    if(!otherWho) return false;
+    const isOtherN = N_CODES.includes(otherWho);
+    return isThisN !== isOtherN; // one side is an N-code user, the other isn't
+  });
+}
+
 async function liveOrderLookup(){
   const myToken = ++liveOrderLookupToken;
   const val = document.getElementById('fOrderNoLive').value.trim();
@@ -2491,8 +2510,11 @@ async function liveOrderLookup(){
   const found = day ? day.records.find(r=>r.orderNo===val) : null;
 
   if(found){
+    const netleyConnect = isNetleyConnectOrder(found, day.records);
     resultEl.innerHTML = '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
-      + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+date+'</div>'
+      + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+date
+      + (netleyConnect ? ' <span class="badge netley-connect">Netley Connect</span>' : '')
+      + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
       + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
       + '<span>Zone <b class="mono">'+escapeHtml(found.zone)+'</b></span>'
@@ -2683,12 +2705,16 @@ async function computeReportData(date){
     .map(p=>({ zone:p.zone, driverNo:[...p.drivers].join(', '), orderCount:p.orderCount }))
     .sort((a,b)=> String(a.zone).localeCompare(String(b.zone)));
 
+  const netleyByNCode = records.filter(r=>r.status==='delivered' && N_CODES.includes(r.completedBy));
+
   return {
     manual,
     vans, trucks,
     totalOrders: records.length,
     totalPreload: preloadOrders.length,
     totalNetley: records.filter(r=>r.isNetley).length,
+    netleyOrdersIncludingConnect: netleyByNCode.length,
+    netleyConnectOnly: netleyByNCode.filter(r=>isNetleyConnectOrder(r, records)).length,
     firstDelivery: deliveredTimes.length ? fmt(deliveredTimes[0]) : '—',
     lastDelivery: deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—',
     driverSnapshot,
@@ -2728,6 +2754,8 @@ function buildReportHtml(date, rd){
     + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
     + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
     + '<tr><th>Total Load-Out Orders</th><td>'+rd.totalOrders+'</td></tr>'
+    + '<tr><th>Netley Orders (incl. Netley Connect)</th><td>'+rd.netleyOrdersIncludingConnect+'</td></tr>'
+    + '<tr><th>Netley Connect only</th><td>'+rd.netleyConnectOnly+'</td></tr>'
     + '<tr><th>Total Netley Orders</th><td>'+rd.totalNetley+'</td></tr>'
     + '<tr><th>Total Preload</th><td>'+rd.totalPreload+'</td></tr>'
     + '<tr><th>First Zone Delivery</th><td>'+rd.firstDelivery+'</td></tr>'
@@ -2842,6 +2870,8 @@ async function drawReportPdf(doc, date, rd){
     ['No. of Vans', String(rd.vans)],
     ['No. of Trucks', String(rd.trucks)],
     ['Total Load-Out Orders', String(rd.totalOrders)],
+    ['Netley Orders (incl. Netley Connect)', String(rd.netleyOrdersIncludingConnect)],
+    ['Netley Connect only', String(rd.netleyConnectOnly)],
     ['Total Netley Orders', String(rd.totalNetley)],
     ['Total Preload', String(rd.totalPreload)],
     ['First Zone Delivery', rd.firstDelivery],
