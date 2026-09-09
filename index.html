@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.4.2b)</title>
+<title>Goods Outflow — Load-Out Control (2.5.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -143,7 +143,7 @@
   .badge.pending{ background:var(--warning-soft); color:var(--warning); }
   .badge.in-transit{ background:var(--accent-soft); color:var(--accent); }
   .badge.delivered{ background:var(--success-soft); color:var(--success); }
-  .badge.netley-connect{ background:#EDE4FA; color:#7B3FE4; margin-left:6px; }
+  .badge.empu-connect{ background:#EDE4FA; color:#7B3FE4; margin-left:6px; }
 
   table{ width:100%; border-collapse:collapse; font-size:14px; }
   th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); padding:8px 8px; border-bottom:1.5px solid var(--line); }
@@ -246,7 +246,17 @@
     #printArea, #printArea *{ visibility:visible; }
     #printArea{ display:block !important; position:absolute; top:0; left:0; width:100%; }
     .zqr-print{ border:none; page-break-after:always; }
+    .empu-qr-sheet{ page-break-after:auto; }
+    @page{ size:portrait; }
   }
+
+  /* EMPU-QR form */
+  .empu-qr-sheet{ padding:12px; }
+  .empu-qr-header{ font-size:16px; margin-bottom:14px; }
+  .empu-qr-grid{ display:grid; gap:14px 20px; }
+  .empu-qr-cell{ display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; break-inside:avoid; }
+  .empu-qr-driver{ font-weight:700; font-size:18px; font-family:'Barlow Semi Condensed',sans-serif; }
+  .empu-qr-code{ margin-left:auto; line-height:0; }
 
   /* Report */
   table.report-auto-table{ width:100%; border-collapse:collapse; font-size:14px; }
@@ -339,7 +349,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.4.2b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.5.0b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -460,6 +470,14 @@
       </label>
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="viewAllFormsPdf(document.getElementById('formsDate').value)">View all as PDF</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>EMPU-QR form</h2>
+      <div class="subtext">One entry per driver — driver no. beside their zone's QR code, same code as their ZQR. All drivers on a single portrait page.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="viewEmpuQrForm()">View / Print EMPU-QR Form</button>
       </div>
     </div>
     <div id="formsList"></div>
@@ -1870,6 +1888,90 @@ document.getElementById('clearDateBtn').addEventListener('click', async ()=>{
 /* ============================= FORMS VIEW ============================= */
 document.getElementById('formsDate').addEventListener('change', ()=>renderFormsList());
 
+/* ---- EMPU-QR form: one entry per driver (driver no. + their zone's QR code,
+   same code as their ZQR), auto-scaled to fit every driver on one portrait page ---- */
+window.viewEmpuQrForm = async function(){
+  const date = document.getElementById('formsDate').value || todayISO();
+  const day = await loadDay(date);
+  const drivers = [];
+  const seen = new Set();
+  if(day){
+    day.records.forEach(r=>{
+      if(!r.driverNo || seen.has(r.driverNo)) return;
+      seen.add(r.driverNo);
+      drivers.push({ driverNo:r.driverNo, zone:r.zone });
+    });
+  }
+  drivers.sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
+
+  if(!drivers.length){
+    toast('No drivers found for '+date+'.');
+    return;
+  }
+
+  // Scale columns/QR size down as the driver count grows, so everything
+  // still fits on a single portrait page rather than spilling onto a second.
+  const n = drivers.length;
+  let columns, qrSize;
+  if(n <= 8){ columns = 1; qrSize = 130; }
+  else if(n <= 16){ columns = 2; qrSize = 105; }
+  else if(n <= 30){ columns = 3; qrSize = 85; }
+  else if(n <= 50){ columns = 4; qrSize = 68; }
+  else { columns = 5; qrSize = 56; }
+
+  const cells = drivers.map((d, i)=>{
+    const code = buildZqrCode(d.zone, date);
+    const qrId = 'empuqr_'+i;
+    return '<div class="empu-qr-cell">'
+      + '<div class="empu-qr-driver">'+escapeHtml(d.driverNo)+'</div>'
+      + '<div class="empu-qr-code" id="'+qrId+'"></div>'
+      + '<!--QR::'+qrId+'::'+escapeHtml(code)+'-->'
+      + '</div>';
+  }).join('');
+
+  currentEmpuQrHtml = '<div class="empu-qr-sheet">'
+    + '<div class="empu-qr-header"><b>EMPU-QR Form</b> — '+date+'</div>'
+    + '<div class="empu-qr-grid" style="grid-template-columns:repeat('+columns+',1fr);">'+cells+'</div>'
+    + '</div>';
+
+  document.getElementById('modalTitle').textContent = 'EMPU-QR Form — '+date;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="btn-row" style="margin-bottom:14px;"><button class="btn btn-ghost" onclick="printEmpuQrForm()">Print</button></div>'
+    + currentEmpuQrHtml;
+  document.getElementById('modalOverlay').classList.add('show');
+  setTimeout(()=>renderQrPlaceholdersSized(body, qrSize), 30);
+}
+
+function renderQrPlaceholdersSized(container, size){
+  const html = container.innerHTML;
+  const re = /<!--QR::(.*?)::(.*?)-->/g;
+  let m;
+  while((m = re.exec(html))){
+    const id = m[1], text = m[2];
+    const el = container.querySelector('#'+id) || document.getElementById(id);
+    if(!el) continue;
+    if(window.QRCode){
+      el.innerHTML='';
+      try{ new QRCode(el, {text, width:size, height:size, correctLevel: QRCode.CorrectLevel.M}); }
+      catch(e){ el.innerHTML = qrFallbackHtml(text); }
+    }else{
+      el.innerHTML = qrFallbackHtml(text);
+    }
+  }
+}
+
+window.printEmpuQrForm = function(){
+  const area = document.getElementById('printArea');
+  area.innerHTML = currentEmpuQrHtml;
+  const n = area.querySelectorAll('.empu-qr-cell').length;
+  let size = 130;
+  if(n>50) size=56; else if(n>30) size=68; else if(n>16) size=85; else if(n>8) size=105;
+  setTimeout(()=>{
+    renderQrPlaceholdersSized(area, size);
+    setTimeout(()=>window.print(), 150);
+  }, 30);
+}
+
 async function renderFormsList(){
   const date = document.getElementById('formsDate').value || todayISO();
   const listEl = document.getElementById('formsList');
@@ -2482,18 +2584,12 @@ const N_CODES = ['N01','N02','N03'];
 function scannerOfRecord(r){
   return r.completedBy || r.scannedBy || null;
 }
-function isNetleyConnectOrder(record, allRecords){
-  const who = scannerOfRecord(record);
-  if(!who) return false;
-  const isThisN = N_CODES.includes(who);
-  return allRecords.some(other=>{
-    if(other===record) return false;
-    if(other.orderNo !== record.orderNo) return false;
-    const otherWho = scannerOfRecord(other);
-    if(!otherWho) return false;
-    const isOtherN = N_CODES.includes(otherWho);
-    return isThisN !== isOtherN; // one side is an N-code user, the other isn't
-  });
+function isEmpuConnectOrder(record){
+  // Any order scanned/delivered by N01, N02, or N03 is an EMPU Connect order —
+  // duplicate order numbers between an N-code user and anyone else are expected
+  // and allowed, so being an N-code order is itself sufficient, with no need to
+  // verify a matching duplicate exists elsewhere.
+  return N_CODES.includes(scannerOfRecord(record));
 }
 
 async function liveOrderLookup(){
@@ -2510,10 +2606,10 @@ async function liveOrderLookup(){
   const found = day ? day.records.find(r=>r.orderNo===val) : null;
 
   if(found){
-    const netleyConnect = isNetleyConnectOrder(found, day.records);
+    const empuConnect = isEmpuConnectOrder(found);
     resultEl.innerHTML = '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+date
-      + (netleyConnect ? ' <span class="badge netley-connect">Netley Connect</span>' : '')
+      + (empuConnect ? ' <span class="badge empu-connect">EMPU Connect</span>' : '')
       + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
       + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
@@ -2688,9 +2784,9 @@ async function computeReportData(date){
   const driverMap = {};
   records.forEach(r=>{
     const key = r.driverNo;
-    if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, hasNetley:false, orderCount:0 };
+    if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, empuCount:0, orderCount:0 };
     driverMap[key].orderCount++;
-    if(r.isNetley) driverMap[key].hasNetley = true;
+    if(r.isNetley || isEmpuConnectOrder(r)) driverMap[key].empuCount++;
   });
   const driverSnapshot = Object.values(driverMap).sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
 
@@ -2705,16 +2801,14 @@ async function computeReportData(date){
     .map(p=>({ zone:p.zone, driverNo:[...p.drivers].join(', '), orderCount:p.orderCount }))
     .sort((a,b)=> String(a.zone).localeCompare(String(b.zone)));
 
-  const netleyByNCode = records.filter(r=>r.status==='delivered' && N_CODES.includes(r.completedBy));
+  const empuOrdersCombined = records.filter(r=>r.status==='delivered' && (r.isNetley || isEmpuConnectOrder(r)));
 
   return {
     manual,
     vans, trucks,
     totalOrders: records.length,
     totalPreload: preloadOrders.length,
-    totalNetley: records.filter(r=>r.isNetley).length,
-    netleyOrdersIncludingConnect: netleyByNCode.length,
-    netleyConnectOnly: netleyByNCode.filter(r=>isNetleyConnectOrder(r, records)).length,
+    empuOrdersIncludingConnect: empuOrdersCombined.length,
     firstDelivery: deliveredTimes.length ? fmt(deliveredTimes[0]) : '—',
     lastDelivery: deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—',
     driverSnapshot,
@@ -2727,7 +2821,7 @@ async function computeReportData(date){
 function buildReportHtml(date, rd){
   const m = rd.manual;
   const driverRows = rd.driverSnapshot.length
-    ? rd.driverSnapshot.map(d=>'<tr><td class="mono">'+escapeHtml(d.driverNo)+'</td><td>'+escapeHtml(d.zone)+'</td><td class="center">'+(d.hasNetley?'Yes':'No')+'</td><td class="center">'+d.orderCount+'</td></tr>').join('')
+    ? rd.driverSnapshot.map(d=>'<tr><td class="mono">'+escapeHtml(d.driverNo)+'</td><td>'+escapeHtml(d.zone)+'</td><td class="center">'+d.empuCount+'</td><td class="center">'+d.orderCount+'</td></tr>').join('')
     : '<tr><td colspan="4" style="text-align:center;color:#666;">None</td></tr>';
   const preloadRows = rd.preloadSnapshot.length
     ? rd.preloadSnapshot.map(p=>'<tr><td class="mono">'+escapeHtml(p.zone)+'</td><td>'+escapeHtml(p.driverNo)+'</td><td class="center">'+p.orderCount+'</td></tr>').join('')
@@ -2754,16 +2848,14 @@ function buildReportHtml(date, rd){
     + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
     + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
     + '<tr><th>Total Load-Out Orders</th><td>'+rd.totalOrders+'</td></tr>'
-    + '<tr><th>Netley Orders (incl. Netley Connect)</th><td>'+rd.netleyOrdersIncludingConnect+'</td></tr>'
-    + '<tr><th>Netley Connect only</th><td>'+rd.netleyConnectOnly+'</td></tr>'
-    + '<tr><th>Total Netley Orders</th><td>'+rd.totalNetley+'</td></tr>'
+    + '<tr><th>EMPU Orders (incl. EMPU Connect)</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
     + '<tr><th>Total Preload</th><td>'+rd.totalPreload+'</td></tr>'
     + '<tr><th>First Zone Delivery</th><td>'+rd.firstDelivery+'</td></tr>'
     + '<tr><th>Last Zone Delivery</th><td>'+rd.lastDelivery+'</td></tr>'
     + '</table>'
 
     + '<div class="zqr-section-label">DRIVER SNAPSHOT</div>'
-    + '<table class="zqr-table"><thead><tr><th>Driver No.</th><th>Zone</th><th>Netley Connect</th><th>No. of Orders</th></tr></thead><tbody>'+driverRows+'</tbody></table>'
+    + '<table class="zqr-table"><thead><tr><th>Driver No.</th><th>Zone</th><th>EMPU Connect</th><th>No. of Orders</th></tr></thead><tbody>'+driverRows+'</tbody></table>'
 
     + '<div class="zqr-section-label">PRELOAD</div>'
     + '<table class="zqr-table"><thead><tr><th>Zone</th><th>Driver No.</th><th>No. of Orders</th></tr></thead><tbody>'+preloadRows+'</tbody></table>'
@@ -2782,6 +2874,7 @@ function buildReportHtml(date, rd){
 }
 
 let currentReportHtml = '';
+let currentEmpuQrHtml = '';
 document.getElementById('viewReportBtn').addEventListener('click', async ()=>{
   const date = document.getElementById('reportDate').value || todayISO();
   const rd = await computeReportData(date);
@@ -2870,17 +2963,15 @@ async function drawReportPdf(doc, date, rd){
     ['No. of Vans', String(rd.vans)],
     ['No. of Trucks', String(rd.trucks)],
     ['Total Load-Out Orders', String(rd.totalOrders)],
-    ['Netley Orders (incl. Netley Connect)', String(rd.netleyOrdersIncludingConnect)],
-    ['Netley Connect only', String(rd.netleyConnectOnly)],
-    ['Total Netley Orders', String(rd.totalNetley)],
+    ['EMPU Orders (incl. EMPU Connect)', String(rd.empuOrdersIncludingConnect)],
     ['Total Preload', String(rd.totalPreload)],
     ['First Zone Delivery', rd.firstDelivery],
     ['Last Zone Delivery', rd.lastDelivery]
   ]);
 
   sectionLabel('DRIVER SNAPSHOT');
-  dataTable(['Driver No.','Zone','Netley Connect','No. of Orders'],
-    rd.driverSnapshot.map(d=>[d.driverNo, d.zone, d.hasNetley?'Yes':'No', String(d.orderCount)]));
+  dataTable(['Driver No.','Zone','EMPU Connect','No. of Orders'],
+    rd.driverSnapshot.map(d=>[d.driverNo, d.zone, String(d.empuCount), String(d.orderCount)]));
 
   sectionLabel('PRELOAD');
   dataTable(['Zone','Driver No.','No. of Orders'],
