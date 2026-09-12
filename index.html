@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.8.1b)</title>
+<title>Goods Outflow — Load-Out Control (2.8.3b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -366,7 +366,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.8.1b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.8.3b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -1139,7 +1139,7 @@ async function refreshDashboard(){
   checkDateRollover();
   const date = document.getElementById('dashDate').value || todayISO();
   const day = await loadDay(date);
-  const dashRecords = day ? day.records.filter(r=>!isPreload(r)) : [];
+  const dashRecords = day ? day.records.filter(r=>r.preloaded || !isPreload(r)) : [];
   const counts = { pending:0, 'in-transit':0, delivered:0 };
   let total = 0;
   if(dashRecords.length){
@@ -1910,10 +1910,23 @@ async function renderZoneAssignment(){
     box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Upload a file for this date to assign zones.</div>';
     return;
   }
-  const driverNos = [...new Set(day.records.map(r=>r.driverNo))].sort((a,b)=>String(a).localeCompare(String(b)));
+  // A driver whose entire order set came from preload already has a working
+  // zone carried over automatically — they don't need (or show up for)
+  // manual assignment. A driver with a mix of preloaded and regular orders
+  // still appears here, since their regular orders genuinely need a zone.
+  const recordsByDriver = {};
+  day.records.forEach(r=>{ (recordsByDriver[r.driverNo] = recordsByDriver[r.driverNo] || []).push(r); });
+  const driverNos = Object.keys(recordsByDriver)
+    .filter(dn => !recordsByDriver[dn].every(r=>r.preloaded))
+    .sort((a,b)=>String(a).localeCompare(String(b)));
   const assignedZone = {}; // driverNo -> zone
   day.records.forEach(r=>{ if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone; });
   const usedZones = new Set(Object.values(assignedZone));
+
+  if(!driverNos.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Every driver for this date already has a zone from preload — nothing left to assign.</div>';
+    return;
+  }
 
   box.innerHTML = driverNos.map(dn=>{
     const currentZone = assignedZone[dn] || '';
