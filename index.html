@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.5.2b)</title>
+<title>Goods Outflow — Load-Out Control (2.7.10b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -162,6 +162,16 @@
   .zone-card .meta-row b{ color:var(--ink); }
 
   .qr-box{ display:flex; align-items:center; justify-content:center; background:#fff; padding:4px; border-radius:4px; flex-shrink:0; }
+  .qr-box-wrap{ position:relative; display:inline-block; }
+  .preload-stamp{
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%) rotate(-18deg);
+    color:#B00020; border:3px solid #B00020; border-radius:8px;
+    padding:4px 10px; font-family:'Barlow Semi Condensed',sans-serif;
+    font-weight:800; font-size:15px; letter-spacing:.08em;
+    opacity:0.82; pointer-events:none; white-space:nowrap;
+    text-shadow:0 0 1px rgba(176,0,32,0.4);
+  }
 
   /* Printable ZQR form — mirrors the real IKEA Zone QR & Driver Handout Form */
   .zqr-print{ background:#fff; padding:22px; border:1px solid #bbb; color:#111; font-family:'Inter',sans-serif; }
@@ -178,9 +188,13 @@
   .zqr-qrbox span{ display:block; font-size:9px; font-weight:700; letter-spacing:.04em; margin-top:4px; color:#333; }
   .zqr-qrbox span.zqr-code-label{ font-size:12px; font-weight:700; letter-spacing:.03em; margin-top:6px; color:#111; }
   .zqr-section-label{ font-size:12.5px; font-weight:800; letter-spacing:.02em; border-top:2px solid #111; padding-top:6px; margin:14px 0 8px; }
+  .preload-tick{ color:#8A6100; font-weight:900; font-size:16px; }
   table.zqr-table{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:6px; }
   table.zqr-table th, table.zqr-table td{ border:1px solid #999; padding:6px 8px; text-align:left; }
   table.zqr-table tr.row-shaded td{ background:#E4E6E9; }
+  table.zqr-table tr.row-preloaded td{ background:#FFF4D6; }
+  .badge.preloaded-badge{ background:#FFEAA3; color:#8A6100; margin-left:6px; }
+  .badge.preload-form-badge{ background:#000; color:#fff; margin-right:8px; letter-spacing:.04em; }
   table.zqr-table th{ background:#f2f2f2; font-size:10.5px; text-transform:uppercase; letter-spacing:.02em; }
   table.zqr-table td.center, table.zqr-table th.center{ text-align:center; }
   .zqr-confirm-text{ font-size:11.5px; color:#333; margin-bottom:12px; }
@@ -285,6 +299,8 @@
   .dash-stat.in-transit .dash-stat-num, .dash-stat.in-transit .dash-stat-label{ color:var(--accent); }
   .dash-stat.delivered{ background:var(--success-soft); }
   .dash-stat.delivered .dash-stat-num, .dash-stat.delivered .dash-stat-label{ color:var(--success); }
+  .dash-stat.preloaded{ background:#FDE2E2; }
+  .dash-stat.preloaded .dash-stat-num, .dash-stat.preloaded .dash-stat-label{ color:var(--danger); }
   .dash-bar-row{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
   .dash-bar-label{ width:90px; font-size:12.5px; font-weight:700; color:var(--ink-soft); flex-shrink:0; }
   .dash-bar-track{ flex:1; background:var(--bg); border-radius:6px; height:22px; overflow:hidden; }
@@ -350,7 +366,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.5.2b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.7.10b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -363,6 +379,7 @@
 <nav class="tabs" id="tabs">
   <button data-view="dashboard" class="active">Dashboard</button>
   <button data-view="upload">Upload</button>
+  <button data-view="preload">Preload</button>
   <button data-view="forms">ZQR Forms</button>
   <button data-view="scan">Scan</button>
   <button data-view="search">Records</button>
@@ -399,6 +416,11 @@
           <div class="dash-stat-num" id="dashDeliveredNum">0</div>
           <div class="dash-stat-label">Delivered</div>
           <div class="dash-stat-sub">ZQR confirmed at zone</div>
+        </div>
+        <div class="dash-stat preloaded">
+          <div class="dash-stat-num" id="dashPreloadedNum">0</div>
+          <div class="dash-stat-label">Preloaded</div>
+          <div class="dash-stat-sub">Already handled the day before</div>
         </div>
       </div>
       <div id="dashChart" style="margin-top:20px;"></div>
@@ -457,6 +479,68 @@
       <h2>Zone assignment</h2>
       <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
       <div id="zoneAssignBox"></div>
+    </div>
+  </section>
+
+  <!-- PRELOAD VIEW -->
+  <section class="view" id="view-preload">
+    <div class="card">
+      <h2>Preload</h2>
+      <div class="subtext">For orders collected by a driver a day early, before that day's real data has been uploaded. Uploaded and scanned here, then automatically integrated into the real data once it's uploaded.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Preload date</span>
+        <input type="date" id="preloadDate"/>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Upload preload file</h2>
+      <div class="subtext">Same file format as the main Upload page. Re-uploading for this date replaces the previous preload upload.</div>
+      <label class="field">
+        <span class="lbl">File</span>
+        <input type="file" id="preloadFile" accept=".xlsx,.xls,.csv"/>
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="preloadProcessBtn">Process file</button>
+        <button class="btn btn-danger" id="preloadDeleteBtn">Delete preload file</button>
+      </div>
+      <div id="preloadUploadStatus" class="subtext" style="margin-top:2px;">&nbsp;</div>
+      <div class="card" id="preloadUploadPreviewCard" style="display:none; margin-top:14px; box-shadow:none; border:1.5px solid var(--line);">
+        <div class="subtext" id="preloadUploadSummaryText"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Preload zone assignment</h2>
+      <div class="subtext">Assign each driver from this preload upload to PL1, PL2, PL3, or PL4. Each zone can only go to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
+      <div id="preloadZoneAssignBox"></div>
+    </div>
+
+    <div class="card">
+      <h2>Scan preload order</h2>
+      <div class="subtext">Step 1 — scan the Order No. Step 2 — scan the ZQR at the assigned PL zone to confirm.</div>
+      <label class="field">
+        <span class="lbl">Scanner input</span>
+        <input type="text" id="preloadScanInput" autocomplete="off"/>
+      </label>
+      <div class="btn-row" style="margin-bottom:16px;">
+        <button class="btn btn-ghost" id="preloadResetScanBtn">Reset</button>
+      </div>
+      <div class="scan-stage step-a" id="preloadStageA"></div>
+      <div id="preloadStageBWrap"></div>
+    </div>
+
+    <div class="card">
+      <h2>Preload ZQR</h2>
+      <div class="subtext">One entry per assigned preload driver — driver no. beside their PL zone's QR code.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="viewPreloadZqrBtn">View / Print Preload ZQR</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Today's preload orders</h2>
+      <div id="preloadOrdersList"></div>
     </div>
   </section>
 
@@ -546,6 +630,20 @@
     </div>
     <div class="card">
       <div id="searchResults"></div>
+    </div>
+
+    <div class="card">
+      <h2>Search preload orders</h2>
+      <div class="subtext">Searches preload records directly, by the date they were preloaded and/or Driver No.</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 14px;">
+        <label class="field"><span class="lbl">Preload date</span><input type="date" id="fPreloadDate"/></label>
+        <label class="field"><span class="lbl">Driver No.</span><input type="text" id="fPreloadDriver"/></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="preloadSearchBtn">Search</button>
+        <button class="btn btn-ghost" id="preloadSearchClearBtn">Clear</button>
+      </div>
+      <div id="preloadSearchResults" style="margin-top:12px;"></div>
     </div>
   </section>
 
@@ -1050,6 +1148,7 @@ async function refreshDashboard(){
   document.getElementById('dashPendingNum').textContent = counts.pending;
   document.getElementById('dashTransitNum').textContent = counts['in-transit'];
   document.getElementById('dashDeliveredNum').textContent = counts.delivered;
+  document.getElementById('dashPreloadedNum').textContent = dashRecords.filter(r=>r.preloaded).length;
   document.getElementById('dashEmpty').style.display = total ? 'none' : 'block';
 
   const timesEl = document.getElementById('dashDeliveryTimes');
@@ -1186,6 +1285,7 @@ async function initApp(){
   const t = todayISO();
   document.getElementById('todayLabel').textContent = t;
   document.getElementById('uploadDate').value = t;
+  document.getElementById('preloadDate').value = t;
   document.getElementById('formsDate').value = t;
   document.getElementById('recordsDate').value = t;
   document.getElementById('dashDate').value = t;
@@ -1196,13 +1296,16 @@ async function initApp(){
   dashboardInterval = setInterval(refreshDashboard, 3000);
   await renderZoneAssignment();
   await showExistingUploadSummary(t);
+  await showExistingPreloadUploadSummary();
+  await renderPreloadZoneAssignment();
+  await renderPreloadOrdersList();
 }
 
 /* ============================= LOGIN (store code + user code) ============================= */
 const VALID_STORE_CODES = ['557'];
 const MANAGER_CODES = ['M01','TL01','LL01'];
 const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03'];
-const MANAGER_ONLY_VIEWS = ['upload','forms','report'];
+const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
 const ACTIVITY_LOG_CODES = ['M01','TL01']; // LL01 is a manager but does NOT get this page
 
 async function logActivity(userCode, event){
@@ -1382,14 +1485,14 @@ async function renderActivityLog(){
 }
 document.getElementById('activityDate').addEventListener('change', renderActivityLog);
 
-const EXTRA_FORMS_ACCESS_CODES = ['N01','N02','N03']; // these three get ZQR Forms on top of the usual co-worker access; CW01-CW10 do not
+const N_CODE_EXTRA_ACCESS_VIEWS = ['forms','preload']; // N01-N03 get these on top of the usual co-worker access; CW01-CW10 do not
 
 function applyRoleUI(role){
   document.querySelectorAll('nav.tabs button[data-view]').forEach(btn=>{
     const view = btn.dataset.view;
     const isManagerOnly = MANAGER_ONLY_VIEWS.includes(view);
     let hide = isManagerOnly && role==='coworker';
-    if(view==='forms' && EXTRA_FORMS_ACCESS_CODES.includes(currentUserCode)) hide = false;
+    if(N_CODE_EXTRA_ACCESS_VIEWS.includes(view) && N_CODES.includes(currentUserCode)) hide = false;
     btn.style.display = hide ? 'none' : '';
   });
   const activityBtn = document.getElementById('activityTabBtn');
@@ -1684,6 +1787,19 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     const preloadOrders = [];
     const seenSignatures = new Set();
     let duplicatesSkipped = 0;
+    let integratedFromPreload = 0;
+
+    // Fetch each lookback day's preload orders once, then match every row
+    // against them in memory — this is what carries a preloaded order's
+    // scan status (in-transit/delivered) straight into the real upload,
+    // instead of it starting fresh as pending.
+    const preloadLookup = {}; // orderNo -> preload order record
+    for(let i=0; i<=PRELOAD_LOOKBACK_DAYS; i++){
+      const checkDate = dateMinusDays(date, i);
+      const preloaded = await loadPreloadOrders(checkDate);
+      preloaded.forEach(p=>{ if(!preloadLookup[p.orderNo]) preloadLookup[p.orderNo] = Object.assign({_preloadDate:checkDate}, p); });
+    }
+
     for(let i=1;i<rows.length;i++){
       if(hiddenRows.has(i)) continue;
       const r = rows[i];
@@ -1705,6 +1821,26 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         status: 'pending',
         loadedAt: null
       };
+
+      const preloadMatch = preloadLookup[rec.orderNo];
+      if(preloadMatch && preloadMatch.status !== 'pending'){
+        // The order already physically left the warehouse via preload, so it's
+        // treated as delivered immediately — regardless of whether the ZQR
+        // confirmation step happened during the preload workflow itself.
+        // driverNo intentionally stays whatever this real upload says, since
+        // the assigned driver may have changed since the preload was done.
+        // zone is carried straight over from preload — the driver already has
+        // a working zone from the day before, so it shouldn't need reassigning.
+        rec.status = 'delivered';
+        rec.preloaded = true;
+        rec.preloadedOn = preloadMatch._preloadDate;
+        rec.preloadedZone = preloadMatch.zone;
+        rec.zone = preloadMatch.zone;
+        rec.deliveredAt = preloadMatch.deliveredAt || preloadMatch.inTransitAt || new Date().toISOString();
+        rec.completedBy = preloadMatch.completedBy || preloadMatch.scannedBy;
+        integratedFromPreload++;
+      }
+
       // Skip exact duplicates — every source column value must match another
       // already-seen row for it to be dropped (not just a repeated order no.).
       const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
@@ -1738,6 +1874,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     lastUploadDate = date;
 
     statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Saved '+records.length+' orders for '+date+'.</span>'
+      + (integratedFromPreload ? ' <span style="color:#7B3FE4; font-weight:600;">'+integratedFromPreload+' order(s) integrated from preload data.</span>' : '')
       + (withinRetention ? '' : ' <span style="color:var(--warning); font-weight:600;">Note: this date is older than the '+RETENTION_DAYS+'-day retention window and will be removed on next cleanup.</span>');
     document.getElementById('uploadPreviewCard').style.display = 'block';
     document.getElementById('uploadSummaryText').textContent =
@@ -1815,6 +1952,435 @@ document.getElementById('uploadDate').addEventListener('change', async ()=>{
   renderFormsList();
   await showExistingUploadSummary(date);
 });
+
+/* ============================= PRELOAD ============================= */
+const PL_ZONES = ['PL1','PL2','PL3','PL4'];
+const PRELOAD_LOOKBACK_DAYS = 3;
+let currentPreloadScanOrder = null; // {date, orderNo, zone, driverNo, suburb, items, recId}
+
+function dateMinusDays(dateStr, n){
+  const d = new Date(dateStr+'T00:00:00');
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0,10);
+}
+
+async function loadPreloadOrders(date){
+  const raw = await storeGet(storeKey('preload:'+date+':orders'));
+  if(!raw) return [];
+  try{ return JSON.parse(raw); }catch(e){ return []; }
+}
+async function savePreloadOrders(date, arr){
+  await storeSet(storeKey('preload:'+date+':orders'), JSON.stringify(arr));
+}
+async function updatePreloadOrdersAtomic(date, mutateFn){
+  if(fbReady){
+    try{
+      const result = await fbDatabase.ref(fbSafeKey(storeKey('preload:'+date+':orders'))).transaction((currentRaw)=>{
+        let arr;
+        try{ arr = currentRaw ? JSON.parse(currentRaw) : []; }catch(e){ arr = []; }
+        mutateFn(arr);
+        return JSON.stringify(arr);
+      });
+      return !!(result && result.committed);
+    }catch(e){ console.error('atomic preload update failed', e); return false; }
+  }else{
+    const arr = await loadPreloadOrders(date);
+    mutateFn(arr);
+    await savePreloadOrders(date, arr);
+    return true;
+  }
+}
+
+/* ---- Upload (same file format and parsing as the main Upload page) ---- */
+document.getElementById('preloadProcessBtn').addEventListener('click', async ()=>{
+  const file = document.getElementById('preloadFile').files[0];
+  const date = document.getElementById('preloadDate').value;
+  const statusEl = document.getElementById('preloadUploadStatus');
+  if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
+  if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+  statusEl.textContent = 'Reading file…';
+
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    let sheetName = wb.SheetNames[0];
+    if(wb.Workbook && wb.Workbook.Sheets){
+      const visibleSheet = wb.Workbook.Sheets.find(s => s && s.name && !s.Hidden);
+      if(visibleSheet) sheetName = visibleSheet.name;
+    }
+    const sheet = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+    if(rows.length < 2){ statusEl.textContent = 'File has no data rows.'; return; }
+
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+    const hiddenCols = new Set();
+    if(sheet['!cols']){
+      sheet['!cols'].forEach((c, absIdx)=>{
+        if(c && c.hidden){ const relIdx = absIdx - range.s.c; if(relIdx>=0) hiddenCols.add(relIdx); }
+      });
+    }
+    const headerRow = rows[0].map((h, idx) => hiddenCols.has(idx) ? '' : h);
+    const cols = detectColumns(headerRow);
+    const missing = ['orderNo','driverNo','suburb','items'].filter(f=>cols[f]===undefined);
+    if(missing.length){
+      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Check the file headers.';
+      return;
+    }
+
+    const hiddenRows = new Set();
+    if(sheet['!rows']){
+      sheet['!rows'].forEach((r, absIdx)=>{
+        if(r && r.hidden){ const relIdx = absIdx - range.s.r; if(relIdx>=0) hiddenRows.add(relIdx); }
+      });
+    }
+
+    const records = [];
+    const seenSignatures = new Set();
+    let duplicatesSkipped = 0;
+    for(let i=1;i<rows.length;i++){
+      if(hiddenRows.has(i)) continue;
+      const r = rows[i];
+      if(!r || r.every(c=>c==='' || c==null)) continue;
+      const orderNo = String(r[cols.orderNo]||'').trim();
+      if(!orderNo) continue;
+      const details = cols.details!==undefined ? String(r[cols.details]||'').trim() : '';
+      const rec = {
+        id: uid(),
+        category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
+        orderNo,
+        driverNo: String(r[cols.driverNo]||'').trim(),
+        driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
+        zone: '',
+        suburb: String(r[cols.suburb]||'').trim().toUpperCase(),
+        items: Number(r[cols.items])||0,
+        details,
+        isNetley: /fullserve/i.test(details),
+        status: 'pending'
+      };
+      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.suburb, rec.items, rec.details].join('␟');
+      if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
+      seenSignatures.add(signature);
+      records.push(rec);
+    }
+
+    if(!records.length){ statusEl.textContent = 'No valid order rows found.'; return; }
+
+    await savePreloadOrders(date, records);
+    statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Saved '+records.length+' preload order(s) for '+date+'.</span>'
+      + (duplicatesSkipped ? ' <span class="subtext">('+duplicatesSkipped+' duplicate row(s) skipped.)</span>' : '');
+    document.getElementById('preloadUploadPreviewCard').style.display = 'block';
+    document.getElementById('preloadUploadSummaryText').textContent =
+      records.length+' orders, '+records.reduce((s,r)=>s+r.items,0)+' total items.';
+
+    await renderPreloadZoneAssignment();
+    await renderPreloadOrdersList();
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = 'Error reading file: '+err.message;
+  }
+});
+
+/* ---- Zone assignment: mirrors the main Zone Assignment page's behaviour
+   (uniqueness enforced, saves automatically), restricted to PL1-4 ---- */
+async function renderPreloadZoneAssignment(){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  const box = document.getElementById('preloadZoneAssignBox');
+  if(!orders.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Upload a preload file for this date first.</div>';
+    return;
+  }
+  const driverNos = [...new Set(orders.map(r=>r.driverNo))].sort();
+  const assignedZones = {};
+  orders.forEach(r=>{ if(r.zone) assignedZones[r.driverNo] = r.zone; });
+  const takenZones = new Set(Object.values(assignedZones));
+
+  box.innerHTML = driverNos.map(d=>{
+    const currentZone = assignedZones[d] || '';
+    const options = PL_ZONES.filter(z=>!takenZones.has(z) || z===currentZone)
+      .map(z=>'<option value="'+z+'"'+(z===currentZone?' selected':'')+'>'+z+'</option>').join('');
+    return '<div class="zone-assign-row"><span class="zone-assign-driver mono">'+escapeHtml(d)+'</span>'
+      + '<select class="zone-assign-select" data-driver="'+escapeHtml(d)+'"><option value="">Unassigned</option>'+options+'</select></div>';
+  }).join('');
+
+  box.querySelectorAll('.zone-assign-select').forEach(sel=>{
+    sel.addEventListener('change', onPreloadZoneAssignChange);
+  });
+}
+
+async function onPreloadZoneAssignChange(e){
+  const driverNo = e.target.dataset.driver;
+  const zone = e.target.value;
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const ok = await updatePreloadOrdersAtomic(date, (orders)=>{
+    orders.forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
+  });
+  if(!ok) return;
+  toast(zone ? 'Driver '+driverNo+' assigned to '+zone : 'Driver '+driverNo+' unassigned');
+  await renderPreloadZoneAssignment();
+  await renderPreloadOrdersList();
+}
+
+document.getElementById('preloadDeleteBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  if(!orders.length){
+    toast('No preload file uploaded for '+date+' to delete.');
+    return;
+  }
+  const ok = confirm('Delete the preload file for '+date+'? This removes all '+orders.length+' preload order(s) and their PL zone assignments. This cannot be undone.');
+  if(!ok) return;
+
+  await storeDelete(storeKey('preload:'+date+':orders'));
+  document.getElementById('preloadFile').value = '';
+  currentPreloadScanOrder = null;
+  toast('Preload file deleted for '+date+'.');
+
+  await showExistingPreloadUploadSummary();
+  await renderPreloadZoneAssignment();
+  await renderPreloadOrdersList();
+  renderPreloadScanStages();
+});
+
+/* ---- Scan: now lookup-based against the uploaded preload file, exactly
+   like the main Scan page, rather than blindly recording whatever's scanned ---- */
+function renderPreloadStageB(result){
+  const manualRow = '<div class="manual-zqr-row">'
+    + '<input type="text" id="preloadManualZqrInput" autocomplete="off"/>'
+    + '</div>';
+  if(result==='match'){
+    return '<div class="scan-stage step-b match"><div class="scan-result-big" style="color:var(--success);">DELIVERED ✓</div>'
+      + '<div class="subtext">Order '+escapeHtml(currentPreloadScanOrder.orderNo)+' confirmed at '+escapeHtml(currentPreloadScanOrder.zone)+'.</div></div>';
+  }
+  if(result==='mismatch'){
+    return '<div class="scan-stage step-b mismatch"><div class="scan-result-big" style="color:var(--danger);">WRONG LOCATION</div>'
+      + '<div class="subtext" style="margin-bottom:12px;">Expected '+escapeHtml(currentPreloadScanOrder.zone)+' / Driver '+escapeHtml(currentPreloadScanOrder.driverNo)+'. Scan the correct ZQR, or Reset.</div>'
+      + manualRow + '</div>';
+  }
+  return '<div class="scan-stage step-b"><div class="scan-flash-prompt">Scan the ZQR now</div>'
+    + manualRow + '</div>';
+}
+
+function focusPreloadActiveInput(){
+  if(currentPreloadScanOrder){
+    const z = document.getElementById('preloadManualZqrInput');
+    if(z) z.focus();
+  }else{
+    if(preloadScanInput) preloadScanInput.focus();
+  }
+}
+
+function preloadBlurRecapture(e){
+  const goingTo = e.relatedTarget;
+  const stayAway = goingTo && (goingTo.id==='preloadScanInput' || goingTo.id==='preloadManualZqrInput' || goingTo.tagName==='BUTTON' || goingTo.tagName==='SELECT' || goingTo.tagName==='TEXTAREA' || goingTo.tagName==='INPUT');
+  if(stayAway) return;
+  if(!document.getElementById('view-preload').classList.contains('active')) return;
+  setTimeout(()=>{
+    if(document.getElementById('view-preload').classList.contains('active')) focusPreloadActiveInput();
+  }, 150);
+}
+
+function setupPreloadZqrInput(){
+  const input = document.getElementById('preloadManualZqrInput');
+  if(!input) return;
+  input.addEventListener('blur', preloadBlurRecapture);
+  attachScanDetection(input, (val)=>handlePreloadZqrScan(val));
+  input.focus();
+}
+
+function renderPreloadScanStages(){
+  const stageA = document.getElementById('preloadStageA');
+  const stageBWrap = document.getElementById('preloadStageBWrap');
+  if(!currentPreloadScanOrder){
+    stageA.style.display='none';
+    stageBWrap.innerHTML='';
+    focusPreloadActiveInput();
+    return;
+  }
+  stageA.style.display='block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Preload order scanned</div>'
+    + '<div class="scan-order-no mono">'+escapeHtml(currentPreloadScanOrder.orderNo)+'</div>'
+    + '<div class="scan-zone-driver">'
+    +   '<span class="zd-chip zone">'+escapeHtml(currentPreloadScanOrder.zone)+'</span>'
+    +   '<span class="zd-chip driver">Driver '+escapeHtml(currentPreloadScanOrder.driverNo)+'</span>'
+    + '</div>'
+    + '<div class="subtext">'+escapeHtml(currentPreloadScanOrder.suburb)+' · '+currentPreloadScanOrder.items+' items</div>'
+    + '</div>';
+  stageBWrap.innerHTML = renderPreloadStageB(null);
+  setupPreloadZqrInput();
+}
+
+async function handlePreloadOrderScan(raw){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const lookupCode = extractOrderNoFromScan(raw.trim());
+  const orders = await loadPreloadOrders(date);
+  const rec = orders.find(r=>r.orderNo===lookupCode);
+  if(!rec){
+    toast('Preload order '+lookupCode+' not found for '+date+'.');
+    beep(220,220);
+    return;
+  }
+  if(!rec.zone){
+    toast('Driver '+rec.driverNo+' has no PL zone assigned yet — assign one first.');
+    beep(220,220);
+    return;
+  }
+
+  currentPreloadScanOrder = { date, orderNo:rec.orderNo, zone:rec.zone, driverNo:rec.driverNo, suburb:rec.suburb, items:rec.items, recId:rec.id };
+  renderPreloadScanStages();
+
+  if(rec.status==='pending'){
+    updatePreloadOrdersAtomic(date, (freshOrders)=>{
+      const freshRec = freshOrders.find(r=>r.id===rec.id);
+      if(freshRec && freshRec.status==='pending'){
+        freshRec.status = 'in-transit';
+        freshRec.inTransitAt = new Date().toISOString();
+        freshRec.scannedBy = currentUserCode;
+      }
+    });
+  }
+  await renderPreloadOrdersList();
+}
+
+async function handlePreloadZqrScan(raw){
+  const z = parseZqrCode(raw);
+  const stageEl = document.getElementById('preloadStageBWrap');
+  if(!z){
+    toast('Not a recognised ZQR code');
+    beep(220,220);
+    return;
+  }
+  const match = z.zone===currentPreloadScanOrder.zone && z.dateCode===formatDDMMYY(currentPreloadScanOrder.date);
+  if(match){
+    const saved = currentPreloadScanOrder;
+    beep(1046,140);
+    stageEl.innerHTML = renderPreloadStageB('match');
+    focusPreloadActiveInput();
+    setTimeout(()=>{ currentPreloadScanOrder=null; renderPreloadScanStages(); }, 1600);
+    (async ()=>{
+      await updatePreloadOrdersAtomic(saved.date, (arr)=>{
+        const rec = arr.find(r=>r.id===saved.recId);
+        if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); rec.completedBy=currentUserCode; }
+      });
+      await renderPreloadOrdersList();
+    })();
+  }else{
+    beep(180,320);
+    stageEl.innerHTML = renderPreloadStageB('mismatch');
+    setupPreloadZqrInput();
+  }
+}
+
+async function handlePreloadScan(raw){
+  if(!currentPreloadScanOrder) await handlePreloadOrderScan(raw);
+  else await handlePreloadZqrScan(raw);
+}
+
+const preloadScanInput = document.getElementById('preloadScanInput');
+attachScanDetection(preloadScanInput, handlePreloadScan);
+preloadScanInput.addEventListener('blur', preloadBlurRecapture);
+
+document.getElementById('view-preload').addEventListener('click', (e)=>{
+  if(e.target.closest('input, button, select, textarea')) return;
+  focusPreloadActiveInput();
+});
+
+document.getElementById('preloadResetScanBtn').addEventListener('click', async ()=>{
+  if(currentPreloadScanOrder){
+    const toRevert = currentPreloadScanOrder;
+    currentPreloadScanOrder = null;
+    renderPreloadScanStages();
+    // The order still exists in the uploaded preload file (unlike the old blind-entry
+    // flow), so Reset reverts it back to pending rather than deleting anything.
+    await updatePreloadOrdersAtomic(toRevert.date, (arr)=>{
+      const rec = arr.find(r=>r.id===toRevert.recId && r.status!=='delivered');
+      if(rec){ rec.status='pending'; delete rec.inTransitAt; delete rec.scannedBy; }
+    });
+    await renderPreloadOrdersList();
+  }else{
+    currentPreloadScanOrder = null;
+    renderPreloadScanStages();
+  }
+});
+
+async function showExistingPreloadUploadSummary(){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  const statusEl = document.getElementById('preloadUploadStatus');
+  const previewCard = document.getElementById('preloadUploadPreviewCard');
+  if(!orders.length){
+    statusEl.textContent = '';
+    previewCard.style.display = 'none';
+    return;
+  }
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Showing the existing preload upload for '+date+'.</span>';
+  previewCard.style.display = 'block';
+  document.getElementById('preloadUploadSummaryText').textContent =
+    orders.length+' orders, '+orders.reduce((s,r)=>s+r.items,0)+' total items.';
+}
+
+document.getElementById('preloadDate').addEventListener('change', async ()=>{
+  currentPreloadScanOrder = null;
+  await showExistingPreloadUploadSummary();
+  await renderPreloadZoneAssignment();
+  await renderPreloadOrdersList();
+  renderPreloadScanStages();
+});
+
+/* ---- Preload orders list ---- */
+function renderPreloadOrdersListFrom(orders, date){
+  const box = document.getElementById('preloadOrdersList');
+  if(!orders.length){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">No preload orders for '+date+' yet — upload a file above.</div>';
+    return;
+  }
+  const rows = orders.slice().reverse().map(o=>
+    '<tr><td class="mono">'+escapeHtml(o.orderNo)+'</td><td class="mono">'+escapeHtml(o.driverNo)+'</td><td>'+escapeHtml(o.zone||'—')+'</td>'
+    + '<td><span class="badge '+o.status+'">'+o.status+'</span></td></tr>'
+  ).join('');
+  box.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+async function renderPreloadOrdersList(){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  renderPreloadOrdersListFrom(orders, date);
+}
+
+/* ---- Preload ZQR ---- */
+window.viewPreloadZqrForm = async function(){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  const assignedOrders = orders.filter(o=>o.zone);
+  if(!assignedOrders.length){
+    toast('Assign at least one driver to a PL zone first.');
+    return;
+  }
+  const groups = groupByZoneDriver(assignedOrders);
+  const formsHtml = (await Promise.all(groups.map(g=>buildZqrFormHtml(date, g, false, true)))).join('');
+
+  document.getElementById('modalTitle').textContent = 'Preload ZQR — '+date;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="btn-row" style="margin-bottom:14px;"><button class="btn btn-ghost" onclick="printPreloadZqrForm()">Print</button></div>'
+    + formsHtml;
+  document.getElementById('modalOverlay').classList.add('show');
+  setTimeout(()=>renderQrPlaceholders(body), 30);
+}
+document.getElementById('viewPreloadZqrBtn').addEventListener('click', viewPreloadZqrForm);
+
+window.printPreloadZqrForm = async function(){
+  const date = document.getElementById('preloadDate').value || todayISO();
+  const orders = await loadPreloadOrders(date);
+  const assignedOrders = orders.filter(o=>o.zone);
+  if(!assignedOrders.length) return;
+  const groups = groupByZoneDriver(assignedOrders);
+  const area = document.getElementById('printArea');
+  area.innerHTML = (await Promise.all(groups.map(g=>buildZqrFormHtml(date, g, true, true)))).join('');
+  setTimeout(()=>{
+    renderQrPlaceholders(area);
+    setTimeout(()=>window.print(), 150);
+  }, 30);
+}
 
 /* Switching to a date that already has an upload should show that upload's
    summary right away — not just leave whatever was last actively processed
@@ -2018,23 +2584,39 @@ async function renderFormsList(){
   window._formsCache = groups;
 }
 
-function buildZqrFormHtml(date, g){
+async function buildZqrFormHtml(date, g, _unused, isPreloadForm){
   const qrId = 'qr_'+uid();
-  const zqrText = buildZqrCode(g.zone, date);
+  const preloadTag = isPreloadForm ? '<span class="badge preload-form-badge">PRELOAD</span> ' : '';
+
+  // If every order in this group came from preload, this driver never went
+  // through the real Zone Assignment step — g.zone would be blank. Use the
+  // preload's own date and PL zone instead, and stamp the form accordingly.
+  const fullyPreloaded = g.records.length>0 && g.records.every(r=>r.preloaded);
+  const displayDate = fullyPreloaded ? (g.records[0].preloadedOn || date) : date;
+  const displayZone = fullyPreloaded ? (g.records[0].preloadedZone || g.zone) : g.zone;
+  const zqrText = buildZqrCode(displayZone, displayDate);
+  const preloadStamp = fullyPreloaded ? '<div class="preload-stamp">PRELOADED</div>' : '';
+
   const rowsHtml = g.records.map((r,i)=>{
-    return '<tr'+(r.isNetley ? ' class="row-shaded"' : '')+'><td>'+(i+1)+'</td><td class="mono">'+escapeHtml(r.orderNo)+'</td>'
+    const classes = [];
+    if(r.isNetley) classes.push('row-shaded');
+    if(r.preloaded) classes.push('row-preloaded');
+    const classAttr = classes.length ? ' class="'+classes.join(' ')+'"' : '';
+    const loadedCell = r.preloaded ? '<span class="preload-tick" title="Already preloaded '+escapeHtml(r.preloadedOn||'')+'">✓</span>' : '';
+    return '<tr'+classAttr+'><td>'+(i+1)+'</td><td class="mono">'+escapeHtml(r.orderNo)+'</td>'
       +'<td>'+escapeHtml(r.suburb)+'</td><td class="center">'+r.items+'</td>'
-      +'<td class="center"></td></tr>';
+      +'<td class="center">'+loadedCell+'</td></tr>';
   }).join('');
+
   return '<div class="zqr-print">'
     + '<div class="zqr-topbar"><div><b>IKEA</b><span>Goods Outflow · Adelaide</span></div>'
-    + '<div class="zqr-formtitle"><b>ZONE QR &amp; DRIVER HANDOUT FORM</b><span>ZQR · Complete before driver departs</span></div></div>'
+    + '<div class="zqr-formtitle">'+preloadTag+'<b>ZONE QR &amp; DRIVER HANDOUT FORM</b><span>ZQR · Complete before driver departs</span></div></div>'
     + '<div class="zqr-infobar"><div class="zqr-infogrid">'
-    + '<div><label>ZONE / BAY LOCATION</label><div class="val">'+escapeHtml(g.zone)+'</div></div>'
-    + '<div><label>DATE</label><div class="val">'+date+'</div></div>'
+    + '<div><label>ZONE / BAY LOCATION</label><div class="val">'+escapeHtml(displayZone)+'</div></div>'
+    + '<div><label>DATE</label><div class="val">'+displayDate+'</div></div>'
     + '<div><label>DRIVER NAME</label><div class="val">&nbsp;</div></div>'
     + '<div><label>DRIVER NO.</label><div class="val">'+escapeHtml(g.driverNo)+'</div></div>'
-    + '</div><div class="zqr-qrbox"><div class="qr-box" id="'+qrId+'"></div><span>SCAN TO CONFIRM</span>'
+    + '</div><div class="zqr-qrbox"><div class="qr-box-wrap"><div class="qr-box" id="'+qrId+'"></div>'+preloadStamp+'</div><span>SCAN TO CONFIRM</span>'
     + '<span class="zqr-code-label mono">'+escapeHtml(zqrText)+'</span></div></div>'
     + '<div class="zqr-section-label">ORDERS LOADED TO THIS ZONE</div>'
     + '<table class="zqr-table"><thead><tr><th>#</th><th>Order No.</th><th>Suburb</th><th>No. of Items</th><th>Loaded ✓</th></tr></thead>'
@@ -2234,7 +2816,7 @@ window.viewFormPdf = async function(date, idx){
     if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
     await drawZqrFormPdf(doc, date, g, false);
     const filename = 'ZQR_'+date+'_Zone-'+g.zone+'_Driver-'+g.driverNo+'.pdf';
-    showPdfModal('Zone '+g.zone+' — Driver '+g.driverNo, doc, filename, buildZqrFormHtml(date, g));
+    showPdfModal('Zone '+g.zone+' — Driver '+g.driverNo, doc, filename, await buildZqrFormHtml(date, g));
   }catch(err){
     console.error(err);
     toast('Could not build the PDF: '+err.message);
@@ -2253,7 +2835,7 @@ window.viewAllFormsPdf = async function(date){
     if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
     for(let i=0;i<groups.length;i++){ await drawZqrFormPdf(doc, date, groups[i], i>0); }
     const filename = 'ZQR_'+date+'_all-forms.pdf';
-    const previewHtml = groups.map(g=>buildZqrFormHtml(date, g)).join('');
+    const previewHtml = (await Promise.all(groups.map(g=>buildZqrFormHtml(date, g)))).join('');
     showPdfModal('All ZQR forms — '+date, doc, filename, previewHtml);
   }catch(err){
     console.error(err);
@@ -2261,14 +2843,14 @@ window.viewAllFormsPdf = async function(date){
   }
 }
 
-window.viewForm = function(date, idx){
+window.viewForm = async function(date, idx){
   const g = window._formsCache[idx];
   document.getElementById('modalTitle').textContent = 'Zone '+g.zone+' — Driver '+g.driverNo;
   const body = document.getElementById('modalBody');
   body.innerHTML = '<div class="btn-row" style="margin-bottom:14px;">'
     + '<button class="btn btn-primary" onclick="viewFormPdf(\''+date+'\','+idx+')">View PDF</button>'
     + '<button class="btn btn-ghost" onclick="printForms(\''+date+'\','+idx+')">Print (browser dialog)</button>'
-    + '</div>' + buildZqrFormHtml(date, g, false);
+    + '</div>' + await buildZqrFormHtml(date, g, false);
   document.getElementById('modalOverlay').classList.add('show');
   setTimeout(()=>renderQrPlaceholders(body), 30);
 }
@@ -2285,7 +2867,7 @@ window.printForms = async function(date, idx){
   const groups = groupByZoneDriver(day.records);
   const target = idx===null ? groups : [groups[idx]];
   const area = document.getElementById('printArea');
-  area.innerHTML = target.map(g=>buildZqrFormHtml(date, g, true)).join('');
+  area.innerHTML = (await Promise.all(target.map(g=>buildZqrFormHtml(date, g, true)))).join('');
   setTimeout(()=>{
     renderQrPlaceholders(area);
     setTimeout(()=>window.print(), 150);
@@ -2551,7 +3133,7 @@ scanInput.addEventListener('blur', sharedBlurRecapture);
    unless it happens inside a direct tap — tapping anywhere on the scan card
    (outside the manual-entry box/buttons) refocuses whichever input is active. */
 document.getElementById('view-scan').addEventListener('click', (e)=>{
-  if(e.target.closest('#manualZqrInput, button, select, textarea')) return;
+  if(e.target.closest('input, button, select, textarea')) return;
   focusActiveInput();
 });
 
@@ -2628,6 +3210,7 @@ async function liveOrderLookup(){
     resultEl.innerHTML = '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+date
       + (empuConnect ? ' <span class="badge empu-connect">EMPU Connect</span>' : '')
+      + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
       + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
       + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
@@ -2698,13 +3281,68 @@ async function runSearch(){
   }
   results.sort((a,b)=> a.driverNo.localeCompare(b.driverNo));
   const showZone = statusFilter!=='empu';
+
   resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver</th>'+(showZone?'<th>Zone</th>':'')+'<th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
-    + results.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
+    + results.map(r=>{
+      const preloadBadge = r.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(r.preloadedOn||'')+'</span>' : '';
+      return '<tr><td class="mono">'+escapeHtml(r.orderNo)+preloadBadge+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
       +(showZone?'<td>'+escapeHtml(r.zone)+'</td>':'')+'<td>'+escapeHtml(r.suburb)+'</td><td>'+r.items+'</td>'
-      +'<td><span class="badge '+r.status+'">'+r.status+'</span></td></tr>').join('')
+      +'<td><span class="badge '+r.status+'">'+r.status+'</span></td></tr>';
+    }).join('')
     + '</tbody></table>';
   resultsEl.dataset.hasResults = '1';
 }
+
+/* ---- Dedicated Preload search: searches preload records directly by the
+   date they were preloaded and/or Driver No. — separate from the main
+   Records search above, which searches the real uploaded day's data. ---- */
+async function runPreloadSearch(){
+  const date = document.getElementById('fPreloadDate').value;
+  const driver = document.getElementById('fPreloadDriver').value.trim().toLowerCase();
+  const resultsEl = document.getElementById('preloadSearchResults');
+  if(!date){
+    resultsEl.innerHTML = '<div class="subtext" style="margin-bottom:0;">Choose a preload date to search.</div>';
+    return;
+  }
+  const orders = await loadPreloadOrders(date);
+  const results = orders.filter(o=> !driver || o.driverNo.toLowerCase().includes(driver));
+  if(!results.length){
+    resultsEl.innerHTML = '<div class="empty"><div class="display">No matching preload records</div>No preload orders for '+date+' match your filters.</div>';
+    return;
+  }
+  results.sort((a,b)=> a.driverNo.localeCompare(b.driverNo));
+
+  // A main upload (this date or up to a few days later) may have already
+  // integrated these orders with a different driver — check forward and
+  // prefer that newer assignment over the original preload driver.
+  const forwardDays = {};
+  for(let i=0; i<=PRELOAD_LOOKBACK_DAYS; i++){
+    const checkDate = dateMinusDays(date, -i);
+    forwardDays[checkDate] = await loadDay(checkDate);
+  }
+  function latestDriverFor(orderNo, originalDriverNo){
+    for(let i=0; i<=PRELOAD_LOOKBACK_DAYS; i++){
+      const checkDate = dateMinusDays(date, -i);
+      const day = forwardDays[checkDate];
+      const match = day ? day.records.find(r=>r.orderNo===orderNo) : null;
+      if(match) return match.driverNo;
+    }
+    return originalDriverNo;
+  }
+
+  const rows = results.map(o=>{
+    const latestDriver = latestDriverFor(o.orderNo, o.driverNo);
+    return '<tr><td class="mono">'+escapeHtml(o.orderNo)+'</td><td class="mono">'+escapeHtml(latestDriver)+'</td><td>'+escapeHtml(o.zone)+'</td>'
+    + '<td><span class="badge '+o.status+'">'+o.status+'</span></td></tr>';
+  }).join('');
+  resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+document.getElementById('preloadSearchBtn').addEventListener('click', runPreloadSearch);
+document.getElementById('preloadSearchClearBtn').addEventListener('click', ()=>{
+  document.getElementById('fPreloadDate').value = '';
+  document.getElementById('fPreloadDriver').value = '';
+  document.getElementById('preloadSearchResults').innerHTML = '';
+});
 
 /* ============================= REPORT ============================= */
 const REPORT_FAILED_HOUR = 10; // 10:00am cutoff for the report's "failed delivery" figure
