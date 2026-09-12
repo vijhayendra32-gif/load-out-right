@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.7.10b)</title>
+<title>Goods Outflow — Load-Out Control (2.8.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -366,7 +366,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.7.10b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.8.1b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -517,17 +517,8 @@
     </div>
 
     <div class="card">
-      <h2>Scan preload order</h2>
-      <div class="subtext">Step 1 — scan the Order No. Step 2 — scan the ZQR at the assigned PL zone to confirm.</div>
-      <label class="field">
-        <span class="lbl">Scanner input</span>
-        <input type="text" id="preloadScanInput" autocomplete="off"/>
-      </label>
-      <div class="btn-row" style="margin-bottom:16px;">
-        <button class="btn btn-ghost" id="preloadResetScanBtn">Reset</button>
-      </div>
-      <div class="scan-stage step-a" id="preloadStageA"></div>
-      <div id="preloadStageBWrap"></div>
+      <h2>Scanning</h2>
+      <div class="subtext">Preload scanning now happens on the main <b>Scan</b> tab — switch it to "Preload Scan" mode and pick this date there.</div>
     </div>
 
     <div class="card">
@@ -572,7 +563,16 @@
   <section class="view" id="view-scan">
     <div class="card">
       <h2>Scan &amp; confirm delivery</h2>
-      <div class="subtext">Step 1 — scan the Order No. or the CDUID. Step 2 — scan the ZQR at the zone to confirm.</div>
+      <div class="subtext" id="scanModeSubtext">Step 1 — scan the Order No. or the CDUID. Step 2 — scan the ZQR at the zone to confirm.</div>
+
+      <div class="btn-row" id="scanModeToggle" style="margin-bottom:14px;">
+        <button class="btn btn-primary scan-mode-btn active" data-mode="normal">Normal Scan</button>
+        <button class="btn btn-ghost scan-mode-btn" data-mode="preload">Preload Scan</button>
+      </div>
+      <label class="field" id="scanPreloadDateField" style="max-width:220px; display:none;">
+        <span class="lbl">Preload date</span>
+        <input type="date" id="scanPreloadDate"/>
+      </label>
 
       <label class="field">
         <span class="lbl">Scanner input</span>
@@ -1062,7 +1062,8 @@ function detectColumns(headerRow){
 }
 
 /* ============================= STATE ============================= */
-let currentScanOrder = null; // {date, orderNo, zone, driverNo, category, suburb, items}
+let currentScanOrder = null; // {date, orderNo, zone, driverNo, category, suburb, items, isPreload}
+let scanMode = 'normal'; // 'normal' | 'preload' — toggled on the Scan page
 
 /* ============================= NAVIGATION ============================= */
 document.getElementById('tabs').addEventListener('click', (e)=>{
@@ -1286,6 +1287,7 @@ async function initApp(){
   document.getElementById('todayLabel').textContent = t;
   document.getElementById('uploadDate').value = t;
   document.getElementById('preloadDate').value = t;
+  document.getElementById('scanPreloadDate').value = t;
   document.getElementById('formsDate').value = t;
   document.getElementById('recordsDate').value = t;
   document.getElementById('dashDate').value = t;
@@ -1835,6 +1837,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         rec.preloaded = true;
         rec.preloadedOn = preloadMatch._preloadDate;
         rec.preloadedZone = preloadMatch.zone;
+        rec.preloadedDriverNo = preloadMatch.driverNo;
         rec.zone = preloadMatch.zone;
         rec.deliveredAt = preloadMatch.deliveredAt || preloadMatch.inTransitAt || new Date().toISOString();
         rec.completedBy = preloadMatch.completedBy || preloadMatch.scannedBy;
@@ -1847,10 +1850,15 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
       seenSignatures.add(signature);
 
-      if(isPreload(rec)){
-        // PL# zone orders (preload) are excluded from the main dataset entirely —
-        // no ZQR form, no Scan/in-transit/delivered status, no Dashboard — and only
-        // surfaced in the Report's Preload table.
+      if(!rec.preloaded && isPreload(rec)){
+        // PL# zone orders uploaded directly in the Excel file (the older,
+        // separate concept) are excluded from the main dataset entirely —
+        // no ZQR form, no Scan/in-transit/delivered status, no Dashboard —
+        // and only surfaced in the Report's Preload table. Records already
+        // integrated from the new Preload workflow (rec.preloaded) must
+        // never be caught by this, even though they share the same PL
+        // zone naming — they belong in the main dataset like any other
+        // delivered order.
         preloadOrders.push(rec);
       }else if(/[A-Za-z]/.test(orderNo)){
         // Alphanumeric order numbers are external returns — excluded from the main
@@ -1956,7 +1964,6 @@ document.getElementById('uploadDate').addEventListener('change', async ()=>{
 /* ============================= PRELOAD ============================= */
 const PL_ZONES = ['PL1','PL2','PL3','PL4'];
 const PRELOAD_LOOKBACK_DAYS = 3;
-let currentPreloadScanOrder = null; // {date, orderNo, zone, driverNo, suburb, items, recId}
 
 function dateMinusDays(dateStr, n){
   const d = new Date(dateStr+'T00:00:00');
@@ -2133,176 +2140,14 @@ document.getElementById('preloadDeleteBtn').addEventListener('click', async ()=>
 
   await storeDelete(storeKey('preload:'+date+':orders'));
   document.getElementById('preloadFile').value = '';
-  currentPreloadScanOrder = null;
+  if(currentScanOrder && currentScanOrder.isPreload) currentScanOrder = null;
   toast('Preload file deleted for '+date+'.');
 
   await showExistingPreloadUploadSummary();
   await renderPreloadZoneAssignment();
   await renderPreloadOrdersList();
-  renderPreloadScanStages();
 });
 
-/* ---- Scan: now lookup-based against the uploaded preload file, exactly
-   like the main Scan page, rather than blindly recording whatever's scanned ---- */
-function renderPreloadStageB(result){
-  const manualRow = '<div class="manual-zqr-row">'
-    + '<input type="text" id="preloadManualZqrInput" autocomplete="off"/>'
-    + '</div>';
-  if(result==='match'){
-    return '<div class="scan-stage step-b match"><div class="scan-result-big" style="color:var(--success);">DELIVERED ✓</div>'
-      + '<div class="subtext">Order '+escapeHtml(currentPreloadScanOrder.orderNo)+' confirmed at '+escapeHtml(currentPreloadScanOrder.zone)+'.</div></div>';
-  }
-  if(result==='mismatch'){
-    return '<div class="scan-stage step-b mismatch"><div class="scan-result-big" style="color:var(--danger);">WRONG LOCATION</div>'
-      + '<div class="subtext" style="margin-bottom:12px;">Expected '+escapeHtml(currentPreloadScanOrder.zone)+' / Driver '+escapeHtml(currentPreloadScanOrder.driverNo)+'. Scan the correct ZQR, or Reset.</div>'
-      + manualRow + '</div>';
-  }
-  return '<div class="scan-stage step-b"><div class="scan-flash-prompt">Scan the ZQR now</div>'
-    + manualRow + '</div>';
-}
-
-function focusPreloadActiveInput(){
-  if(currentPreloadScanOrder){
-    const z = document.getElementById('preloadManualZqrInput');
-    if(z) z.focus();
-  }else{
-    if(preloadScanInput) preloadScanInput.focus();
-  }
-}
-
-function preloadBlurRecapture(e){
-  const goingTo = e.relatedTarget;
-  const stayAway = goingTo && (goingTo.id==='preloadScanInput' || goingTo.id==='preloadManualZqrInput' || goingTo.tagName==='BUTTON' || goingTo.tagName==='SELECT' || goingTo.tagName==='TEXTAREA' || goingTo.tagName==='INPUT');
-  if(stayAway) return;
-  if(!document.getElementById('view-preload').classList.contains('active')) return;
-  setTimeout(()=>{
-    if(document.getElementById('view-preload').classList.contains('active')) focusPreloadActiveInput();
-  }, 150);
-}
-
-function setupPreloadZqrInput(){
-  const input = document.getElementById('preloadManualZqrInput');
-  if(!input) return;
-  input.addEventListener('blur', preloadBlurRecapture);
-  attachScanDetection(input, (val)=>handlePreloadZqrScan(val));
-  input.focus();
-}
-
-function renderPreloadScanStages(){
-  const stageA = document.getElementById('preloadStageA');
-  const stageBWrap = document.getElementById('preloadStageBWrap');
-  if(!currentPreloadScanOrder){
-    stageA.style.display='none';
-    stageBWrap.innerHTML='';
-    focusPreloadActiveInput();
-    return;
-  }
-  stageA.style.display='block';
-  stageA.innerHTML = '<div style="text-align:left;">'
-    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Preload order scanned</div>'
-    + '<div class="scan-order-no mono">'+escapeHtml(currentPreloadScanOrder.orderNo)+'</div>'
-    + '<div class="scan-zone-driver">'
-    +   '<span class="zd-chip zone">'+escapeHtml(currentPreloadScanOrder.zone)+'</span>'
-    +   '<span class="zd-chip driver">Driver '+escapeHtml(currentPreloadScanOrder.driverNo)+'</span>'
-    + '</div>'
-    + '<div class="subtext">'+escapeHtml(currentPreloadScanOrder.suburb)+' · '+currentPreloadScanOrder.items+' items</div>'
-    + '</div>';
-  stageBWrap.innerHTML = renderPreloadStageB(null);
-  setupPreloadZqrInput();
-}
-
-async function handlePreloadOrderScan(raw){
-  const date = document.getElementById('preloadDate').value || todayISO();
-  const lookupCode = extractOrderNoFromScan(raw.trim());
-  const orders = await loadPreloadOrders(date);
-  const rec = orders.find(r=>r.orderNo===lookupCode);
-  if(!rec){
-    toast('Preload order '+lookupCode+' not found for '+date+'.');
-    beep(220,220);
-    return;
-  }
-  if(!rec.zone){
-    toast('Driver '+rec.driverNo+' has no PL zone assigned yet — assign one first.');
-    beep(220,220);
-    return;
-  }
-
-  currentPreloadScanOrder = { date, orderNo:rec.orderNo, zone:rec.zone, driverNo:rec.driverNo, suburb:rec.suburb, items:rec.items, recId:rec.id };
-  renderPreloadScanStages();
-
-  if(rec.status==='pending'){
-    updatePreloadOrdersAtomic(date, (freshOrders)=>{
-      const freshRec = freshOrders.find(r=>r.id===rec.id);
-      if(freshRec && freshRec.status==='pending'){
-        freshRec.status = 'in-transit';
-        freshRec.inTransitAt = new Date().toISOString();
-        freshRec.scannedBy = currentUserCode;
-      }
-    });
-  }
-  await renderPreloadOrdersList();
-}
-
-async function handlePreloadZqrScan(raw){
-  const z = parseZqrCode(raw);
-  const stageEl = document.getElementById('preloadStageBWrap');
-  if(!z){
-    toast('Not a recognised ZQR code');
-    beep(220,220);
-    return;
-  }
-  const match = z.zone===currentPreloadScanOrder.zone && z.dateCode===formatDDMMYY(currentPreloadScanOrder.date);
-  if(match){
-    const saved = currentPreloadScanOrder;
-    beep(1046,140);
-    stageEl.innerHTML = renderPreloadStageB('match');
-    focusPreloadActiveInput();
-    setTimeout(()=>{ currentPreloadScanOrder=null; renderPreloadScanStages(); }, 1600);
-    (async ()=>{
-      await updatePreloadOrdersAtomic(saved.date, (arr)=>{
-        const rec = arr.find(r=>r.id===saved.recId);
-        if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); rec.completedBy=currentUserCode; }
-      });
-      await renderPreloadOrdersList();
-    })();
-  }else{
-    beep(180,320);
-    stageEl.innerHTML = renderPreloadStageB('mismatch');
-    setupPreloadZqrInput();
-  }
-}
-
-async function handlePreloadScan(raw){
-  if(!currentPreloadScanOrder) await handlePreloadOrderScan(raw);
-  else await handlePreloadZqrScan(raw);
-}
-
-const preloadScanInput = document.getElementById('preloadScanInput');
-attachScanDetection(preloadScanInput, handlePreloadScan);
-preloadScanInput.addEventListener('blur', preloadBlurRecapture);
-
-document.getElementById('view-preload').addEventListener('click', (e)=>{
-  if(e.target.closest('input, button, select, textarea')) return;
-  focusPreloadActiveInput();
-});
-
-document.getElementById('preloadResetScanBtn').addEventListener('click', async ()=>{
-  if(currentPreloadScanOrder){
-    const toRevert = currentPreloadScanOrder;
-    currentPreloadScanOrder = null;
-    renderPreloadScanStages();
-    // The order still exists in the uploaded preload file (unlike the old blind-entry
-    // flow), so Reset reverts it back to pending rather than deleting anything.
-    await updatePreloadOrdersAtomic(toRevert.date, (arr)=>{
-      const rec = arr.find(r=>r.id===toRevert.recId && r.status!=='delivered');
-      if(rec){ rec.status='pending'; delete rec.inTransitAt; delete rec.scannedBy; }
-    });
-    await renderPreloadOrdersList();
-  }else{
-    currentPreloadScanOrder = null;
-    renderPreloadScanStages();
-  }
-});
 
 async function showExistingPreloadUploadSummary(){
   const date = document.getElementById('preloadDate').value || todayISO();
@@ -2321,11 +2166,9 @@ async function showExistingPreloadUploadSummary(){
 }
 
 document.getElementById('preloadDate').addEventListener('change', async ()=>{
-  currentPreloadScanOrder = null;
   await showExistingPreloadUploadSummary();
   await renderPreloadZoneAssignment();
   await renderPreloadOrdersList();
-  renderPreloadScanStages();
 });
 
 /* ---- Preload orders list ---- */
@@ -2877,6 +2720,35 @@ window.printForms = async function(date, idx){
 /* ============================= SCAN VIEW ============================= */
 const scanInput = document.getElementById('scanInput');
 
+document.querySelectorAll('.scan-mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    if(btn.dataset.mode === scanMode) return;
+    scanMode = btn.dataset.mode;
+    document.querySelectorAll('.scan-mode-btn').forEach(b=>{
+      const active = b.dataset.mode === scanMode;
+      b.classList.toggle('btn-primary', active);
+      b.classList.toggle('btn-ghost', !active);
+      b.classList.toggle('active', active);
+    });
+    const preloadDateField = document.getElementById('scanPreloadDateField');
+    const subtextEl = document.getElementById('scanModeSubtext');
+    if(scanMode === 'preload'){
+      preloadDateField.style.display = 'block';
+      if(!document.getElementById('scanPreloadDate').value) document.getElementById('scanPreloadDate').value = todayISO();
+      subtextEl.textContent = 'Preload scan — Step 1: scan the Order No. Step 2: scan the ZQR at the assigned PL zone to confirm.';
+    }else{
+      preloadDateField.style.display = 'none';
+      subtextEl.textContent = 'Step 1 — scan the Order No. or the CDUID. Step 2 — scan the ZQR at the zone to confirm.';
+    }
+    currentScanOrder = null;
+    renderScanStages();
+  });
+});
+document.getElementById('scanPreloadDate').addEventListener('change', ()=>{
+  currentScanOrder = null;
+  renderScanStages();
+});
+
 /* Hardware barcode/QR scanners "type" into the focused field far faster than
    a human ever does — characters land only a few ms apart, with no gap in
    the whole sequence anywhere near typing speed. We use that to auto-submit
@@ -2939,9 +2811,19 @@ function attachScanDetection(inputEl, onSubmit){
 attachScanDetection(scanInput, handleScan);
 
 document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
-  currentScanOrder = null;
-  await clearInProgressScan();
-  renderScanStages();
+  if(currentScanOrder && currentScanOrder.isPreload){
+    const toRevert = currentScanOrder;
+    currentScanOrder = null;
+    renderScanStages();
+    await updatePreloadOrdersAtomic(toRevert.date, (arr)=>{
+      const rec = arr.find(r=>r.id===toRevert.recId && r.status!=='delivered');
+      if(rec){ rec.status='pending'; delete rec.inTransitAt; delete rec.scannedBy; }
+    });
+  }else{
+    currentScanOrder = null;
+    await clearInProgressScan();
+    renderScanStages();
+  }
 });
 
 async function handleScan(raw){
@@ -3006,6 +2888,10 @@ function extractOrderNoFromScan(raw){
 }
 
 async function handleOrderScan(raw){
+  if(scanMode==='preload'){
+    await handlePreloadOrderScanUnified(raw);
+    return;
+  }
   const parsed = parseOrderCode(raw);
   const lookupCode = extractOrderNoFromScan(parsed.orderNo);
   let date = parsed.date || document.getElementById('formsDate').value || todayISO();
@@ -3050,6 +2936,38 @@ async function handleOrderScan(raw){
   saveInProgressScan();
 }
 
+async function handlePreloadOrderScanUnified(raw){
+  const date = document.getElementById('scanPreloadDate').value || todayISO();
+  const lookupCode = extractOrderNoFromScan(raw.trim());
+  const orders = await loadPreloadOrders(date);
+  const rec = orders.find(r=>r.orderNo===lookupCode);
+  if(!rec){
+    toast('Preload order '+lookupCode+' not found for '+date+'.');
+    beep(220,220);
+    return;
+  }
+  if(!rec.zone){
+    toast('Driver '+rec.driverNo+' has no PL zone assigned yet — assign one on the Preload page first.');
+    beep(220,220);
+    return;
+  }
+
+  currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
+                        suburb: rec.suburb, items: rec.items, recId: rec.id, isPreload: true };
+  renderScanStages();
+
+  if(rec.status==='pending'){
+    updatePreloadOrdersAtomic(date, (freshOrders)=>{
+      const freshRec = freshOrders.find(r=>r.id===rec.id);
+      if(freshRec && freshRec.status==='pending'){
+        freshRec.status = 'in-transit';
+        freshRec.inTransitAt = new Date().toISOString();
+        freshRec.scannedBy = currentUserCode;
+      }
+    });
+  }
+}
+
 async function handleZqrScan(raw){
   const z = parseZqrCode(raw);
   const stageEl = document.getElementById('stageBWrap');
@@ -3071,15 +2989,22 @@ async function handleZqrScan(raw){
     (async ()=>{
       const recId = savedOrder.recId;
       const completedBy = currentUserCode;
-      await updateDayAtomic(savedOrder.date, (freshDay)=>{
-        const freshRec = freshDay.records.find(r=>r.id===recId);
-        if(freshRec){
-          freshRec.status = 'delivered';
-          freshRec.deliveredAt = new Date().toISOString();
-          freshRec.completedBy = completedBy;
-        }
-      });
-      await clearInProgressScan();
+      if(savedOrder.isPreload){
+        await updatePreloadOrdersAtomic(savedOrder.date, (arr)=>{
+          const rec = arr.find(r=>r.id===recId);
+          if(rec){ rec.status='delivered'; rec.deliveredAt = new Date().toISOString(); rec.completedBy = completedBy; }
+        });
+      }else{
+        await updateDayAtomic(savedOrder.date, (freshDay)=>{
+          const freshRec = freshDay.records.find(r=>r.id===recId);
+          if(freshRec){
+            freshRec.status = 'delivered';
+            freshRec.deliveredAt = new Date().toISOString();
+            freshRec.completedBy = completedBy;
+          }
+        });
+        await clearInProgressScan();
+      }
     })();
   }else{
     beep(180,320);
@@ -3159,7 +3084,7 @@ function renderScanStages(){
   }
   stageA.style.display='block';
   stageA.innerHTML = '<div style="text-align:left;">'
-    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Order scanned</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Order scanned'+(currentScanOrder.isPreload?' <span class="badge preloaded-badge" style="text-transform:none;">Preload</span>':'')+'</div>'
     + '<div class="scan-order-no mono">'+escapeHtml(currentScanOrder.orderNo)+'</div>'
     + '<div class="scan-zone-driver">'
     +   '<span class="zd-chip zone">Zone '+escapeHtml(currentScanOrder.zone)+'</span>'
@@ -3459,9 +3384,12 @@ async function computeReportData(date){
   const driverMap = {};
   records.forEach(r=>{
     const key = r.driverNo;
-    if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, empuCount:0, orderCount:0 };
+    if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, empuCount:0, orderCount:0, preloadedDriverNo:'' };
     driverMap[key].orderCount++;
     if(r.isNetley || isEmpuConnectOrder(r)) driverMap[key].empuCount++;
+    if(r.preloaded && r.preloadedDriverNo && r.preloadedDriverNo!==r.driverNo && !driverMap[key].preloadedDriverNo){
+      driverMap[key].preloadedDriverNo = r.preloadedDriverNo;
+    }
   });
   const driverSnapshot = Object.values(driverMap).sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
 
@@ -3496,7 +3424,7 @@ async function computeReportData(date){
 function buildReportHtml(date, rd){
   const m = rd.manual;
   const driverRows = rd.driverSnapshot.length
-    ? rd.driverSnapshot.map(d=>'<tr><td class="mono">'+escapeHtml(d.driverNo)+'</td><td>'+escapeHtml(d.zone)+'</td><td class="center">'+d.empuCount+'</td><td class="center">'+d.orderCount+'</td></tr>').join('')
+    ? rd.driverSnapshot.map(d=>'<tr><td class="mono">'+escapeHtml(d.driverNo)+(d.preloadedDriverNo?' <span class="badge preloaded-badge">was '+escapeHtml(d.preloadedDriverNo)+', preload</span>':'')+'</td><td>'+escapeHtml(d.zone)+'</td><td class="center">'+d.empuCount+'</td><td class="center">'+d.orderCount+'</td></tr>').join('')
     : '<tr><td colspan="4" style="text-align:center;color:#666;">None</td></tr>';
   const preloadRows = rd.preloadSnapshot.length
     ? rd.preloadSnapshot.map(p=>'<tr><td class="mono">'+escapeHtml(p.zone)+'</td><td>'+escapeHtml(p.driverNo)+'</td><td class="center">'+p.orderCount+'</td></tr>').join('')
@@ -3646,7 +3574,7 @@ async function drawReportPdf(doc, date, rd){
 
   sectionLabel('DRIVER SNAPSHOT');
   dataTable(['Driver No.','Zone','EMPU Connect','No. of Orders'],
-    rd.driverSnapshot.map(d=>[d.driverNo, d.zone, String(d.empuCount), String(d.orderCount)]));
+    rd.driverSnapshot.map(d=>[d.driverNo+(d.preloadedDriverNo?' (was '+d.preloadedDriverNo+', preload)':''), d.zone, String(d.empuCount), String(d.orderCount)]));
 
   sectionLabel('PRELOAD');
   dataTable(['Zone','Driver No.','No. of Orders'],
