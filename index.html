@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.9.1b)</title>
+<title>Goods Outflow — Load-Out Control (2.9.2b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -370,7 +370,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.9.1b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.9.2b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -1744,10 +1744,10 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
 
   // Once a report has been generated for a date, that date's data is locked
-  // against re-upload entirely — no exceptions, regardless of who's logged in.
+  // against re-upload — except for managers, who can still re-upload if needed.
   const existingReportData = await loadReportData(date);
-  if(existingReportData && existingReportData.reportGenerated){
-    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">A report has already been generated for '+date+'. This date is locked and can no longer be re-uploaded.</span>';
+  if(existingReportData && existingReportData.reportGenerated && !MANAGER_CODES.includes(currentUserCode)){
+    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">A report has already been generated for '+date+'. Only a manager can re-upload this date now.</span>';
     return;
   }
 
