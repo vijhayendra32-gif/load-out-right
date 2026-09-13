@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.8.3b)</title>
+<title>Goods Outflow — Load-Out Control (2.9.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -280,6 +280,10 @@
   table.report-auto-table tr:last-child th, table.report-auto-table tr:last-child td{ border-bottom:none; }
   .report-sub{ font-weight:400; color:var(--ink-soft); font-size:12px; text-transform:none; letter-spacing:0; }
   .failed-order-chip{ display:inline-flex; align-items:center; background:var(--danger-soft); color:var(--danger); font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; padding:5px 10px; border-radius:6px; margin:3px 6px 3px 0; }
+  .dropzone{ border:2px dashed var(--line); border-radius:10px; padding:24px 16px; text-align:center; margin-bottom:14px; transition:background .15s, border-color .15s; }
+  .dropzone.dragover{ background:var(--accent-soft); border-color:var(--accent); }
+  .dropzone-text{ font-weight:700; font-size:14.5px; color:var(--ink); }
+  .dropzone-subtext{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
   .zone-assign-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
   .zone-assign-row:last-child{ border-bottom:none; }
   .zone-assign-driver{ font-weight:700; font-size:14px; }
@@ -366,7 +370,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.8.3b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">2.9.1b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -417,7 +421,7 @@
           <div class="dash-stat-label">Delivered</div>
           <div class="dash-stat-sub">ZQR confirmed at zone</div>
         </div>
-        <div class="dash-stat preloaded">
+        <div class="dash-stat preloaded" id="dashPreloadedCard">
           <div class="dash-stat-num" id="dashPreloadedNum">0</div>
           <div class="dash-stat-label">Preloaded</div>
           <div class="dash-stat-sub">Already handled the day before</div>
@@ -447,6 +451,10 @@
         <span class="lbl">Date</span>
         <input type="date" id="uploadDate"/>
       </label>
+      <div class="dropzone" id="uploadDropzone">
+        <div class="dropzone-text">Drag &amp; drop your Excel/CSV file here</div>
+        <div class="dropzone-subtext">or use "Choose File" below</div>
+      </div>
       <label class="field">
         <span class="lbl">Excel file (.xlsx / .csv)</span>
         <input type="file" id="uploadFile" accept=".xlsx,.xls,.csv"/>
@@ -496,6 +504,10 @@
     <div class="card">
       <h2>Upload preload file</h2>
       <div class="subtext">Same file format as the main Upload page. Re-uploading for this date replaces the previous preload upload.</div>
+      <div class="dropzone" id="preloadDropzone">
+        <div class="dropzone-text">Drag &amp; drop your Excel/CSV file here</div>
+        <div class="dropzone-subtext">or use "Choose File" below</div>
+      </div>
       <label class="field">
         <span class="lbl">File</span>
         <input type="file" id="preloadFile" accept=".xlsx,.xls,.csv"/>
@@ -1027,7 +1039,7 @@ function normHeader(h){
 }
 const HEADER_ALIASES = {
   category: ['category','cat'],
-  orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum'],
+  orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum','ref3','reference3','referenceno3','ref'],
   driverNo: ['driverno','driver#','drivernumber','driver','drivernum'],
   driverName: ['drivername','drivernamefull'],
   zone: ['zone','zonebay','bay','zonebayno'],
@@ -1149,7 +1161,9 @@ async function refreshDashboard(){
   document.getElementById('dashPendingNum').textContent = counts.pending;
   document.getElementById('dashTransitNum').textContent = counts['in-transit'];
   document.getElementById('dashDeliveredNum').textContent = counts.delivered;
-  document.getElementById('dashPreloadedNum').textContent = dashRecords.filter(r=>r.preloaded).length;
+  const preloadedCount = dashRecords.filter(r=>r.preloaded).length;
+  document.getElementById('dashPreloadedNum').textContent = preloadedCount;
+  document.getElementById('dashPreloadedCard').style.display = preloadedCount ? '' : 'none';
   document.getElementById('dashEmpty').style.display = total ? 'none' : 'block';
 
   const timesEl = document.getElementById('dashDeliveryTimes');
@@ -2821,6 +2835,42 @@ function attachScanDetection(inputEl, onSubmit){
     }, SCAN_SETTLE_MS);
   });
 }
+
+/* Drag-and-drop is just an alternative way to populate the SAME file input —
+   it doesn't touch parsing at all, so it plugs into whatever "Process file"
+   already does for that page. */
+function setupDropzone(dropzoneId, fileInputId){
+  const dropzone = document.getElementById(dropzoneId);
+  const fileInput = document.getElementById(fileInputId);
+  if(!dropzone || !fileInput) return;
+
+  ['dragenter','dragover'].forEach(evt=>{
+    dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave','drop'].forEach(evt=>{
+    dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', (e)=>{
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if(files && files.length){
+      fileInput.files = files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+  // Clicking the dropzone itself also opens the file picker, for discoverability.
+  dropzone.addEventListener('click', ()=> fileInput.click());
+}
+setupDropzone('uploadDropzone', 'uploadFile');
+setupDropzone('preloadDropzone', 'preloadFile');
+
 attachScanDetection(scanInput, handleScan);
 
 document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
