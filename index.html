@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (2.9.2b)</title>
+<title>Goods Outflow — Load-Out Control (3.0.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -280,6 +281,9 @@
   table.report-auto-table tr:last-child th, table.report-auto-table tr:last-child td{ border-bottom:none; }
   .report-sub{ font-weight:400; color:var(--ink-soft); font-size:12px; text-transform:none; letter-spacing:0; }
   .failed-order-chip{ display:inline-flex; align-items:center; background:var(--danger-soft); color:var(--danger); font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; padding:5px 10px; border-radius:6px; margin:3px 6px 3px 0; }
+  .info-icon{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:12px; font-weight:700; font-style:italic; font-family:Georgia,serif; cursor:pointer; margin-left:7px; vertical-align:middle; user-select:none; flex-shrink:0; }
+  .info-icon:hover .info-popover, .info-icon.open .info-popover{ display:block; }
+  .info-popover{ display:none; position:absolute; top:24px; left:0; z-index:80; background:#fff; border:1px solid var(--line); border-radius:8px; padding:11px 13px; font-size:13px; font-weight:400; font-style:normal; font-family:'Inter',sans-serif; color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.14); width:min(260px, 70vw); text-align:left; white-space:normal; text-transform:none; letter-spacing:normal; line-height:1.4; }
   .dropzone{ border:2px dashed var(--line); border-radius:10px; padding:24px 16px; text-align:center; margin-bottom:14px; transition:background .15s, border-color .15s; }
   .dropzone.dragover{ background:var(--accent-soft); border-color:var(--accent); }
   .dropzone-text{ font-weight:700; font-size:14.5px; color:var(--ink); }
@@ -370,7 +374,7 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="eyebrow">Goods Outflow <span class="version-tag">2.9.2b</span></span>
+    <span class="eyebrow">Goods Outflow <span class="version-tag">3.0.0b</span></span>
     <span class="title">Load-Out Control</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
@@ -461,32 +465,30 @@
       </label>
       <div class="btn-row">
         <button class="btn btn-primary" id="processBtn">Process file</button>
+        <button class="btn btn-danger" id="clearDateBtn">Clear data for this date</button>
       </div>
       <div id="uploadStatus" style="margin-top:14px; font-size:13.5px;"></div>
+      <div id="clearDateStatus" style="margin-top:6px; font-size:13.5px;"></div>
     </div>
 
     <div class="card" id="uploadPreviewCard" style="display:none;">
       <h2>Upload summary</h2>
       <div class="subtext" id="uploadSummaryText"></div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="printAllBtn">Print all ZQR forms</button>
-        <button class="btn btn-ghost" id="goToFormsBtn">View ZQR forms</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Clear data</h2>
-      <div class="subtext">Permanently deletes all uploaded records, ZQR forms, and scan progress for the date selected above. This cannot be undone.</div>
-      <div class="btn-row">
-        <button class="btn btn-danger" id="clearDateBtn">Clear data for this date</button>
-      </div>
-      <div id="clearDateStatus" style="margin-top:12px; font-size:13.5px;"></div>
     </div>
 
     <div class="card">
       <h2>Zone assignment</h2>
       <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
       <div id="zoneAssignBox"></div>
+    </div>
+
+    <div class="card">
+      <h2>ZQR forms</h2>
+      <div class="subtext">View or print the ZQR handout forms generated from this upload.</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="printAllBtn">Print all ZQR forms</button>
+        <button class="btn btn-ghost" id="goToFormsBtn">View ZQR forms</button>
+      </div>
     </div>
   </section>
 
@@ -503,14 +505,14 @@
 
     <div class="card">
       <h2>Upload preload file</h2>
-      <div class="subtext">Same file format as the main Upload page. Re-uploading for this date replaces the previous preload upload.</div>
+      <div class="subtext">Excel/CSV (same format as the main Upload page) or PDF. Re-uploading for this date replaces the previous preload upload.</div>
       <div class="dropzone" id="preloadDropzone">
-        <div class="dropzone-text">Drag &amp; drop your Excel/CSV file here</div>
+        <div class="dropzone-text">Drag &amp; drop your Excel/CSV/PDF file here</div>
         <div class="dropzone-subtext">or use "Choose File" below</div>
       </div>
       <label class="field">
         <span class="lbl">File</span>
-        <input type="file" id="preloadFile" accept=".xlsx,.xls,.csv"/>
+        <input type="file" id="preloadFile" accept=".xlsx,.xls,.csv,.pdf"/>
       </label>
       <div class="btn-row">
         <button class="btn btn-primary" id="preloadProcessBtn">Process file</button>
@@ -526,11 +528,6 @@
       <h2>Preload zone assignment</h2>
       <div class="subtext">Assign each driver from this preload upload to PL1, PL2, PL3, or PL4. Each zone can only go to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
       <div id="preloadZoneAssignBox"></div>
-    </div>
-
-    <div class="card">
-      <h2>Scanning</h2>
-      <div class="subtext">Preload scanning now happens on the main <b>Scan</b> tab — switch it to "Preload Scan" mode and pick this date there.</div>
     </div>
 
     <div class="card">
@@ -1039,12 +1036,12 @@ function normHeader(h){
 }
 const HEADER_ALIASES = {
   category: ['category','cat'],
-  orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum','ref3','reference3','referenceno3','ref'],
-  driverNo: ['driverno','driver#','drivernumber','driver','drivernum'],
+  orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum','ref3','reference3','referenceno3','ref','customerreferenceno2','customerreference2','customerreferenceno','customerreference'],
+  driverNo: ['driverno','driver#','drivernumber','driver','drivernum','scheduledrider'],
   driverName: ['drivername','drivernamefull'],
   zone: ['zone','zonebay','bay','zonebayno'],
-  suburb: ['suburb','location','suburblocation','deliverysuburb'],
-  items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount'],
+  suburb: ['suburb','location','suburblocation','deliverysuburb','consigneecity'],
+  items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount','totalquantity','totalqty'],
   details: ['details','detail','notes','note','description']
 };
 function detectColumns(headerRow){
@@ -1644,6 +1641,48 @@ async function forceLogoutDueToInactivity(){
   document.getElementById('userCodeError').textContent = 'Logged out after 30 minutes of inactivity.';
 }
 
+/* Converts every "<h2>Heading</h2><div class="subtext">description</div>"
+   pair on the page into a compact heading with a small info icon — click or
+   hover to reveal the full description in a popover. Runs once, generically,
+   across the whole app rather than needing every section rewritten by hand. */
+function setupInfoTooltips(){
+  document.querySelectorAll('h2').forEach(h2=>{
+    if(h2.querySelector('.info-icon')) return; // already converted
+    const subtext = h2.nextElementSibling;
+    if(!subtext || !subtext.classList.contains('subtext')) return;
+    if(subtext.id === 'uploadSummaryText') return; // dynamic status text, not a static description
+
+    const icon = document.createElement('span');
+    icon.className = 'info-icon';
+    icon.textContent = 'i';
+    icon.setAttribute('tabindex', '0');
+    icon.setAttribute('role', 'button');
+    icon.setAttribute('aria-label', 'More info');
+
+    const popover = document.createElement('div');
+    popover.className = 'info-popover';
+    popover.innerHTML = subtext.innerHTML;
+    icon.appendChild(popover);
+
+    h2.appendChild(document.createTextNode(' '));
+    h2.appendChild(icon);
+    subtext.style.display = 'none';
+
+    icon.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const wasOpen = icon.classList.contains('open');
+      document.querySelectorAll('.info-icon.open').forEach(el=>el.classList.remove('open'));
+      if(!wasOpen) icon.classList.add('open');
+    });
+    icon.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); icon.click(); }
+    });
+  });
+}
+document.addEventListener('click', ()=>{
+  document.querySelectorAll('.info-icon.open').forEach(el=>el.classList.remove('open'));
+});
+
 async function completeLogin(){
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
@@ -1651,6 +1690,7 @@ async function completeLogin(){
   await restoreInProgressScan();
   applyRoleUI(currentUserRole);
   startInactivityWatch();
+  setupInfoTooltips();
   renderScanStages(); // always redraw the Scan page to match the current user's actual
                        // state — whether that's a clean slate or their own resumed scan —
                        // never leave a previous user's on-screen content sitting there
@@ -2026,12 +2066,98 @@ async function updatePreloadOrdersAtomic(date, mutateFn){
 }
 
 /* ---- Upload (same file format and parsing as the main Upload page) ---- */
+async function extractTextFromPdf(file){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const data = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data}).promise;
+  let fullText = '';
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(item=>item.str).join(' ') + '\n\n';
+  }
+  return fullText;
+}
+
+/* PDF extraction for "ancdelivers"-style preload manifests, verified against
+   a real sample file. Splits the document on each "REF 3" occurrence (one
+   per order). Driver & Vehicle Type is a column header printed once at the
+   top of the document, not a label repeated before each value, so the
+   driver code is found positionally instead — the short alpha+digits code
+   (e.g. RT96) that appears right after "CHARGE QTY ... kgs". Suburb is
+   taken as the word before the LAST 4-digit postcode in the chunk, since
+   the FIRST such postcode belongs to the warehouse's own from-address
+   (e.g. "Airport 5950") and the delivery destination's suburb+postcode
+   always comes later. */
+function extractOrdersFromPdfText(text){
+  const refPattern = /REF\s*3\b/gi;
+  const splitPoints = [];
+  let m;
+  while((m = refPattern.exec(text))){ splitPoints.push(m.index); }
+  if(!splitPoints.length) return [];
+
+  const chunks = splitPoints.map((start, idx)=>{
+    const end = idx+1 < splitPoints.length ? splitPoints[idx+1] : text.length;
+    return text.slice(start, end);
+  });
+
+  const records = [];
+  chunks.forEach(chunk=>{
+    const orderMatch = chunk.match(/REF\s*3\s*[:\-]?\s*([A-Za-z0-9]{4,})/i);
+    if(!orderMatch) return;
+    const orderNo = orderMatch[1].trim();
+
+    const driverMatch = chunk.match(/CHARGE\s+QTY[\s\S]*?kgs\s*([A-Za-z]{1,4}\d{1,5})/i);
+    const driverNo = driverMatch ? driverMatch[1].trim() : '';
+
+    const suburbMatches = [...chunk.matchAll(/([A-Za-z]+)\s+(\d{4})\b/g)];
+    const suburb = suburbMatches.length ? suburbMatches[suburbMatches.length-1][1].trim() : '';
+
+    const itemsMatch = chunk.match(/PCS\s*\/\s*WGT\s*[:\-]?\s*(\d+)/i);
+    const items = itemsMatch ? Number(itemsMatch[1]) : 0;
+
+    records.push({
+      id: uid(),
+      category: '', orderNo, driverNo, driverName: '', zone: '',
+      suburb: suburb.toUpperCase(), items,
+      details: '', isNetley: false, status: 'pending'
+    });
+  });
+  return records;
+}
+
 document.getElementById('preloadProcessBtn').addEventListener('click', async ()=>{
   const file = document.getElementById('preloadFile').files[0];
   const date = document.getElementById('preloadDate').value;
   const statusEl = document.getElementById('preloadUploadStatus');
   if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
   if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+
+  const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+  if(isPdf){
+    statusEl.textContent = 'Reading PDF…';
+    try{
+      const text = await extractTextFromPdf(file);
+      const records = extractOrdersFromPdfText(text);
+      if(!records.length){
+        statusEl.innerHTML = 'Could not find any orders in this PDF. The extraction patterns (REF 3, Driver &amp; Vehicle Type, Delivery Destination Suburb, PCS/WGT) may not match this document\u2019s exact layout — this is a first attempt built without a sample file, so it will likely need adjusting once tried for real.';
+        return;
+      }
+      await savePreloadOrders(date, records);
+      statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Extracted '+records.length+' order(s) from the PDF for '+date+'.</span> '
+        + '<span class="subtext">Extracted from this manifest\u2019s layout — worth a quick glance below the first time you use a new source file.</span>';
+      document.getElementById('preloadUploadPreviewCard').style.display = 'block';
+      document.getElementById('preloadUploadSummaryText').textContent =
+        records.length+' orders, '+records.reduce((s,r)=>s+r.items,0)+' total items.';
+      await renderPreloadZoneAssignment();
+      await renderPreloadOrdersList();
+    }catch(err){
+      console.error(err);
+      statusEl.textContent = 'Error reading PDF: '+err.message;
+    }
+    return;
+  }
+
   statusEl.textContent = 'Reading file…';
 
   try{
