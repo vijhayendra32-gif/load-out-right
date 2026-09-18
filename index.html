@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.0.8b)</title>
+<title>Goods Outflow — Load-Out Control (3.1.2b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -381,7 +381,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.0.8b</span>
+    <span class="version-tag" id="versionTagRight">3.1.2b</span>
     <span class="today mono" id="todayLabel"></span>
     <span class="user-badge mono" id="userBadge"></span>
     <button id="logoutBtn" class="switch-user-btn" title="Log out">Log out</button>
@@ -484,6 +484,35 @@
       <h2>Zone assignment</h2>
       <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
       <div id="zoneAssignBox"></div>
+
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div class="subtext" style="margin-bottom:8px;">Add a driver who isn't in today's upload yet, so they're available for zone assignment.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <input type="text" id="manualDriverInput" placeholder="Driver No." style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+          <button class="btn btn-ghost" id="addManualDriverBtn">Add driver</button>
+        </div>
+      </div>
+
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div class="subtext" style="margin-bottom:8px;">Swap the zones of two drivers.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <select id="swapDriverA" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
+          <span class="subtext" style="margin:0;">with</span>
+          <select id="swapDriverB" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
+          <button class="btn btn-ghost" id="swapZonesBtn">Swap</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Manually assign an order</h2>
+      <div class="subtext">For an order that isn't in today's uploaded file — assign it directly to a driver.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="manualOrderNoInput" placeholder="Order No." style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <select id="manualOrderDriverSelect" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
+        <button class="btn btn-primary" id="manualAssignOrderBtn">Assign</button>
+      </div>
+      <div id="manualAssignStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
     </div>
 
     <div class="card">
@@ -1960,26 +1989,35 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 /* ---- Zone assignment: manually map each driver to a unique zone ---- */
 const ZONE_OPTIONS = ['1','2','3','4','5','6','7','A','B','C','D','E1','E2','E3','E4'];
 
-async function renderZoneAssignment(){
-  const date = document.getElementById('uploadDate').value || todayISO();
-  const box = document.getElementById('zoneAssignBox');
-  const day = await loadDay(date);
-  if(!day || !day.records.length){
-    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Upload a file for this date to assign zones.</div>';
-    return;
-  }
+function getAssignableDriverList(day){
   // A driver whose entire order set came from preload already has a working
   // zone carried over automatically — they don't need (or show up for)
   // manual assignment. A driver with a mix of preloaded and regular orders
   // still appears here, since their regular orders genuinely need a zone.
+  // Manually-added drivers (no real order yet) are included too.
   const recordsByDriver = {};
-  day.records.forEach(r=>{ (recordsByDriver[r.driverNo] = recordsByDriver[r.driverNo] || []).push(r); });
-  const driverNos = Object.keys(recordsByDriver)
-    .filter(dn => !recordsByDriver[dn].every(r=>r.preloaded))
-    .sort((a,b)=>String(a).localeCompare(String(b)));
+  (day.records||[]).forEach(r=>{ (recordsByDriver[r.driverNo] = recordsByDriver[r.driverNo] || []).push(r); });
+  const fromRecords = Object.keys(recordsByDriver).filter(dn => !recordsByDriver[dn].every(r=>r.preloaded));
+  const manualOnly = (day.manualDrivers||[]).map(m=>m.driverNo).filter(dn => !fromRecords.includes(dn));
+  return [...fromRecords, ...manualOnly].sort((a,b)=>String(a).localeCompare(String(b)));
+}
+
+async function renderZoneAssignment(){
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const box = document.getElementById('zoneAssignBox');
+  const day = await loadDay(date);
+  if(!day || (!day.records.length && !(day.manualDrivers||[]).length)){
+    box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Upload a file for this date to assign zones.</div>';
+    populateDriverPickers([]);
+    return;
+  }
+  const driverNos = getAssignableDriverList(day);
   const assignedZone = {}; // driverNo -> zone
   day.records.forEach(r=>{ if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone; });
+  (day.manualDrivers||[]).forEach(m=>{ if(m.zone && !assignedZone[m.driverNo]) assignedZone[m.driverNo] = m.zone; });
   const usedZones = new Set(Object.values(assignedZone));
+
+  populateDriverPickers(driverNos);
 
   if(!driverNos.length){
     box.innerHTML = '<div class="subtext" style="margin-bottom:0;">Every driver for this date already has a zone from preload — nothing left to assign.</div>';
@@ -2002,12 +2040,27 @@ async function renderZoneAssignment(){
   });
 }
 
+function populateDriverPickers(driverNos){
+  ['swapDriverA','swapDriverB','manualOrderDriverSelect'].forEach(id=>{
+    const sel = document.getElementById(id);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Select driver…</option>' + driverNos.map(dn=>'<option value="'+escapeHtml(dn)+'">'+escapeHtml(dn)+'</option>').join('');
+    if(driverNos.includes(prev)) sel.value = prev;
+  });
+}
+
 async function onZoneAssignChange(e){
   const driverNo = e.target.dataset.driver;
   const zone = e.target.value;
   const date = document.getElementById('uploadDate').value || todayISO();
   const ok = await updateDayAtomic(date, (day)=>{
-    day.records.forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
+    let touched = false;
+    day.records.forEach(r=>{ if(r.driverNo===driverNo){ r.zone = zone; touched = true; } });
+    if(!touched){
+      day.manualDrivers = day.manualDrivers || [];
+      const entry = day.manualDrivers.find(m=>m.driverNo===driverNo);
+      if(entry) entry.zone = zone;
+    }
   });
   if(!ok) return;
   toast(zone ? 'Driver '+driverNo+' assigned to Zone '+zone : 'Driver '+driverNo+' unassigned');
@@ -2019,6 +2072,101 @@ async function onZoneAssignChange(e){
   if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 }
+
+document.getElementById('addManualDriverBtn').addEventListener('click', async ()=>{
+  const input = document.getElementById('manualDriverInput');
+  const driverNo = input.value.trim();
+  const date = document.getElementById('uploadDate').value || todayISO();
+  if(!driverNo){ toast('Enter a driver no. first.'); return; }
+  const day = await loadDay(date);
+  const existing = day && getAssignableDriverList(day).includes(driverNo);
+  if(existing){ toast('Driver '+driverNo+' is already in today\'s list.'); return; }
+  const ok = await updateDayAtomic(date, (d)=>{
+    d.manualDrivers = d.manualDrivers || [];
+    if(!d.manualDrivers.find(m=>m.driverNo===driverNo)) d.manualDrivers.push({ driverNo, zone:'' });
+  });
+  if(!ok){ toast('No upload exists for this date yet — upload a file first.'); return; }
+  input.value = '';
+  toast('Driver '+driverNo+' added.');
+  await renderZoneAssignment();
+});
+
+document.getElementById('swapZonesBtn').addEventListener('click', async ()=>{
+  const driverA = document.getElementById('swapDriverA').value;
+  const driverB = document.getElementById('swapDriverB').value;
+  const date = document.getElementById('uploadDate').value || todayISO();
+  if(!driverA || !driverB){ toast('Pick both drivers to swap.'); return; }
+  if(driverA === driverB){ toast('Pick two different drivers.'); return; }
+  const ok = await updateDayAtomic(date, (day)=>{
+    const zoneOf = (dn)=>{
+      const rec = day.records.find(r=>r.driverNo===dn && r.zone);
+      if(rec) return rec.zone;
+      const m = (day.manualDrivers||[]).find(x=>x.driverNo===dn);
+      return m ? m.zone : '';
+    };
+    const zoneA = zoneOf(driverA);
+    const zoneB = zoneOf(driverB);
+    day.records.forEach(r=>{
+      if(r.driverNo===driverA) r.zone = zoneB;
+      else if(r.driverNo===driverB) r.zone = zoneA;
+    });
+    (day.manualDrivers||[]).forEach(m=>{
+      if(m.driverNo===driverA) m.zone = zoneB;
+      else if(m.driverNo===driverB) m.zone = zoneA;
+    });
+  });
+  if(!ok) return;
+  toast('Swapped zones for '+driverA+' and '+driverB+'.');
+  await renderZoneAssignment();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+});
+
+/* Creates a new order record for an order that isn't in the uploaded file,
+   assigning it directly to a driver. Reused by both the Upload page's manual
+   form and the scan-flow fallback for rebooked/unrecognised orders. */
+async function manuallyCreateOrderRecord(date, orderNo, driverNo, initialStatus){
+  let createdRec = null;
+  const ok = await updateDayAtomic(date, (day)=>{
+    if(day.records.find(r=>r.orderNo===orderNo)) return; // already exists — don't duplicate
+    const manualEntry = (day.manualDrivers||[]).find(m=>m.driverNo===driverNo);
+    const zone = manualEntry ? manualEntry.zone : (day.records.find(r=>r.driverNo===driverNo && r.zone) || {}).zone || '';
+    createdRec = {
+      id: uid(), category:'', orderNo, driverNo, driverName:'', zone,
+      suburb:'', items:0, details:'', isNetley:false, status: initialStatus||'pending',
+      manuallyAdded:true
+    };
+    day.records.push(createdRec);
+    // Once a real order exists for this driver, they no longer need the
+    // placeholder entry — their zone now lives on the real record instead.
+    if(manualEntry) day.manualDrivers = day.manualDrivers.filter(m=>m.driverNo!==driverNo);
+  });
+  return ok ? createdRec : null;
+}
+
+document.getElementById('manualAssignOrderBtn').addEventListener('click', async ()=>{
+  const orderNo = document.getElementById('manualOrderNoInput').value.trim();
+  const driverNo = document.getElementById('manualOrderDriverSelect').value;
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const statusEl = document.getElementById('manualAssignStatus');
+  if(!orderNo){ statusEl.textContent = 'Enter an order no. first.'; return; }
+  if(!driverNo){ statusEl.textContent = 'Select a driver first.'; return; }
+  const day = await loadDay(date);
+  if(day && day.records.find(r=>r.orderNo===orderNo)){
+    statusEl.textContent = 'Order '+orderNo+' already exists for this date.';
+    return;
+  }
+  const rec = await manuallyCreateOrderRecord(date, orderNo, driverNo, 'pending');
+  if(!rec){ statusEl.textContent = 'No upload exists for this date yet — upload a file first.'; return; }
+  document.getElementById('manualOrderNoInput').value = '';
+  statusEl.innerHTML = rec.zone
+    ? '<span style="color:var(--success); font-weight:700;">Order '+escapeHtml(orderNo)+' assigned to Driver '+escapeHtml(driverNo)+'.</span>'
+    : '<span style="color:var(--success); font-weight:700;">Order '+escapeHtml(orderNo)+' assigned to Driver '+escapeHtml(driverNo)+'.</span> <span style="color:var(--danger);">Driver has no zone yet — assign one above so their ZQR can print.</span>';
+  await renderZoneAssignment();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+});
+
 document.getElementById('uploadDate').addEventListener('change', async ()=>{
   const date = document.getElementById('uploadDate').value;
   // The Upload page's date drives Dashboard and ZQR Forms too, so picking a
@@ -3004,6 +3152,7 @@ setupDropzone('preloadDropzone', 'preloadFile');
 attachScanDetection(scanInput, handleScan);
 
 document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
+  pendingRebook = null;
   if(currentScanOrder && currentScanOrder.isPreload){
     const toRevert = currentScanOrder;
     currentScanOrder = null;
@@ -3080,6 +3229,22 @@ function extractOrderNoFromScan(raw){
   return raw.length > ORDER_NO_LENGTH ? raw.slice(0, ORDER_NO_LENGTH) : raw;
 }
 
+/* Searches all known dates before `beforeDate` for a DELIVERED record with
+   this order number — this is what catches a rebooked order (same order no.
+   reused for a new delivery attempt after a prior return). */
+async function findPriorDeliveryDate(orderNo, beforeDate){
+  const dates = await loadDatesIndex();
+  for(const d of dates){
+    if(d >= beforeDate) continue;
+    const dObj = await loadDay(d);
+    const found = dObj && dObj.records.find(r=>r.orderNo===orderNo && r.status==='delivered');
+    if(found) return { date: d, rec: found };
+  }
+  return null;
+}
+
+let pendingRebook = null; // {orderNo, date, rec, priorDate} while awaiting Yes/No
+
 async function handleOrderScan(raw){
   if(scanMode==='preload'){
     await handlePreloadOrderScanUnified(raw);
@@ -3091,42 +3256,130 @@ async function handleOrderScan(raw){
   let day = await loadDay(date);
   let rec = day ? day.records.find(r=>r.orderNo===lookupCode) : null;
 
-  if(!rec){
-    // fall back: search all dates for this order number
-    const dates = await loadDatesIndex();
-    for(const d of dates){
-      const dObj = await loadDay(d);
-      const found = dObj && dObj.records.find(r=>r.orderNo===lookupCode);
-      if(found){ rec = found; date = d; day = dObj; break; }
+  if(rec){
+    // Found in today's own upload — proceed normally. No rebook question here,
+    // even if this same order number happens to have been delivered before;
+    // today's upload already settles what should happen with it today.
+    currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
+                          category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
+    renderScanStages();
+    if(rec.status==='pending'){
+      const recId = rec.id;
+      const scannedBy = currentUserCode;
+      updateDayAtomic(date, (freshDay)=>{
+        const freshRec = freshDay.records.find(r=>r.id===recId);
+        if(freshRec && freshRec.status==='pending'){
+          freshRec.status = 'in-transit';
+          freshRec.inTransitAt = new Date().toISOString();
+          freshRec.scannedBy = scannedBy;
+        }
+      });
     }
-  }
-  if(!rec){
-    toast('Order '+lookupCode+' not found');
-    beep(220,220);
+    saveInProgressScan();
     return;
   }
 
-  // Update the UI and refocus the scanner input FIRST, right away — before any
-  // saving happens. Waiting on network writes here is exactly what was making
-  // the focus call land too late for mobile browsers to honour it.
-  currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
-                        category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
-  renderScanStages();
-
-  // Now save in the background — doesn't block the UI update above.
-  if(rec.status==='pending'){
-    const recId = rec.id;
-    const scannedBy = currentUserCode;
-    updateDayAtomic(date, (freshDay)=>{
-      const freshRec = freshDay.records.find(r=>r.id===recId);
-      if(freshRec && freshRec.status==='pending'){
-        freshRec.status = 'in-transit';
-        freshRec.inTransitAt = new Date().toISOString();
-        freshRec.scannedBy = scannedBy;
-      }
-    });
+  // Not in today's upload. Rebook handling (checking delivery history and
+  // offering manual driver assignment) is restricted to Manager/TL/LL and
+  // EMPU (N-code) users — everyone else just gets a plain not-found result.
+  const canRebook = MANAGER_CODES.includes(currentUserCode) || N_CODES.includes(currentUserCode);
+  if(canRebook){
+    const prior = await findPriorDeliveryDate(lookupCode, date); // naturally bounded to the last 30 days by data retention
+    if(prior){
+      pendingRebook = { orderNo: lookupCode, date, priorDate: prior.date };
+      renderRebookPrompt();
+      return;
+    }
   }
-  saveInProgressScan();
+
+  toast('Order '+lookupCode+' not found');
+  beep(220,220);
+}
+
+function formatDDMM(dateStr){
+  const [y,m,d] = dateStr.split('-');
+  return d+'/'+m;
+}
+
+function renderRebookPrompt(){
+  const stageA = document.getElementById('stageA');
+  const stageBWrap = document.getElementById('stageBWrap');
+  stageA.style.display = 'block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Order scanned</div>'
+    + '<div class="scan-order-no mono">'+escapeHtml(pendingRebook.orderNo)+'</div>'
+    + '</div>';
+  stageBWrap.innerHTML = '<div class="scan-stage step-b">'
+    + '<div style="font-size:15px;font-weight:700;margin-bottom:6px;">Order previously delivered on '+formatDDMM(pendingRebook.priorDate)+'.</div>'
+    + '<div style="font-size:14px;margin-bottom:14px;">Is this a re-book for today?</div>'
+    + '<div class="btn-row" style="justify-content:center;">'
+    + '<button class="btn btn-primary" id="rebookYesBtn">Yes</button>'
+    + '<button class="btn btn-ghost" id="rebookNoBtn">No</button>'
+    + '</div></div>';
+  document.getElementById('rebookYesBtn').addEventListener('click', renderConfirmDeliveryPrompt);
+  document.getElementById('rebookNoBtn').addEventListener('click', confirmRebookNo);
+}
+
+function confirmRebookNo(){
+  pendingRebook = null;
+  toast('Scan cancelled.');
+  currentScanOrder = null;
+  renderScanStages();
+}
+
+function renderConfirmDeliveryPrompt(){
+  const stageBWrap = document.getElementById('stageBWrap');
+  stageBWrap.innerHTML = '<div class="scan-stage step-b">'
+    + '<div style="font-size:15px;font-weight:700;margin-bottom:14px;">Confirm delivery for today?</div>'
+    + '<div class="btn-row" style="justify-content:center;">'
+    + '<button class="btn btn-primary" id="confirmDeliveryYesBtn">Yes</button>'
+    + '<button class="btn btn-ghost" id="confirmDeliveryNoBtn">No</button>'
+    + '</div></div>';
+  document.getElementById('confirmDeliveryYesBtn').addEventListener('click', ()=>{
+    const { orderNo, date } = pendingRebook;
+    pendingRebook = null;
+    renderManualDriverFallback(orderNo, date);
+  });
+  document.getElementById('confirmDeliveryNoBtn').addEventListener('click', confirmRebookNo);
+}
+
+function renderManualDriverFallback(orderNo, date){
+  const stageA = document.getElementById('stageA');
+  const stageBWrap = document.getElementById('stageBWrap');
+  stageA.style.display = 'block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div style="font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Order scanned</div>'
+    + '<div class="scan-order-no mono">'+escapeHtml(orderNo)+'</div>'
+    + '</div>';
+  stageBWrap.innerHTML = '<div class="scan-stage step-b">'
+    + '<div style="font-size:13px;margin-bottom:10px;">Assign driver:</div>'
+    + '<select id="manualFallbackDriverSelect" style="width:100%; max-width:260px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; margin-bottom:12px;"></select>'
+    + '<div class="btn-row" style="justify-content:center;">'
+    + '<button class="btn btn-primary" id="manualFallbackConfirmBtn">Confirm</button>'
+    + '<button class="btn btn-ghost" id="manualFallbackCancelBtn">Cancel</button>'
+    + '</div></div>';
+  (async ()=>{
+    const day = await loadDay(date);
+    const drivers = day ? getAssignableDriverList(day) : [];
+    const sel = document.getElementById('manualFallbackDriverSelect');
+    sel.innerHTML = '<option value="">Select driver…</option>' + drivers.map(dn=>'<option value="'+escapeHtml(dn)+'">'+escapeHtml(dn)+'</option>').join('');
+  })();
+  document.getElementById('manualFallbackConfirmBtn').addEventListener('click', async ()=>{
+    const driverNo = document.getElementById('manualFallbackDriverSelect').value;
+    if(!driverNo){ toast('Select a driver first.'); return; }
+    const rec = await manuallyCreateOrderRecord(date, orderNo, driverNo, 'in-transit');
+    if(!rec){ toast('Could not assign — order may already exist.'); return; }
+    currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
+                          category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
+    renderScanStages();
+    saveInProgressScan();
+    if(document.getElementById('uploadDate').value===date) renderZoneAssignment();
+    if(!rec.zone) toast('Driver '+driverNo+' has no zone yet — assign one on the Upload page so their ZQR can print.');
+  });
+  document.getElementById('manualFallbackCancelBtn').addEventListener('click', ()=>{
+    currentScanOrder = null;
+    renderScanStages();
+  });
 }
 
 async function handlePreloadOrderScanUnified(raw){
