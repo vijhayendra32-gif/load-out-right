@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.1.2b)</title>
+<title>Goods Outflow — Load-Out Control (3.1.3b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -296,6 +296,8 @@
   .zone-assign-driver{ font-weight:700; font-size:14px; }
   .zone-assign-select{ width:auto; min-width:140px; padding:8px 10px; font-size:14px; }
   .zone-assign-select.unassigned{ border-color:var(--warning); background:var(--warning-soft); }
+  .zone-assign-delete{ border:1px solid var(--line); background:transparent; color:var(--danger); width:30px; height:30px; border-radius:6px; font-size:14px; cursor:pointer; flex-shrink:0; }
+  .zone-assign-delete:hover{ background:var(--danger); color:#fff; border-color:var(--danger); }
   .report-issues-box{ border:1px solid #999; border-radius:4px; padding:10px 12px; font-size:13px; color:#222; min-height:24px; }
 
   /* Dashboard */
@@ -381,7 +383,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.1.2b</span>
+    <span class="version-tag" id="versionTagRight">3.1.3b</span>
     <span class="today mono" id="todayLabel"></span>
     <span class="user-badge mono" id="userBadge"></span>
     <button id="logoutBtn" class="switch-user-btn" title="Log out">Log out</button>
@@ -2016,6 +2018,11 @@ async function renderZoneAssignment(){
   day.records.forEach(r=>{ if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone; });
   (day.manualDrivers||[]).forEach(m=>{ if(m.zone && !assignedZone[m.driverNo]) assignedZone[m.driverNo] = m.zone; });
   const usedZones = new Set(Object.values(assignedZone));
+  // Only a manual-only driver (no real order yet) can be deleted here — one
+  // with real orders would need those orders handled too, which this simple
+  // add/remove control isn't meant for.
+  const recordDriverNos = new Set(day.records.map(r=>r.driverNo));
+  const manualOnlyNos = new Set((day.manualDrivers||[]).map(m=>m.driverNo).filter(dn=>!recordDriverNos.has(dn)));
 
   populateDriverPickers(driverNos);
 
@@ -2027,16 +2034,24 @@ async function renderZoneAssignment(){
   box.innerHTML = driverNos.map(dn=>{
     const currentZone = assignedZone[dn] || '';
     const options = ZONE_OPTIONS.filter(z => z===currentZone || !usedZones.has(z));
+    const deleteBtn = manualOnlyNos.has(dn)
+      ? '<button class="zone-assign-delete" data-driver="'+escapeHtml(dn)+'" title="Remove driver">✕</button>'
+      : '';
     return '<div class="zone-assign-row">'
       + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+'</span>'
       + '<select class="zone-assign-select'+(currentZone?'':' unassigned')+'" data-driver="'+escapeHtml(dn)+'">'
       + '<option value="">Unassigned</option>'
       + options.map(z=>'<option value="'+z+'"'+(z===currentZone?' selected':'')+'>Zone '+z+'</option>').join('')
-      + '</select></div>';
+      + '</select>'
+      + deleteBtn
+      + '</div>';
   }).join('');
 
   box.querySelectorAll('.zone-assign-select').forEach(sel=>{
     sel.addEventListener('change', onZoneAssignChange);
+  });
+  box.querySelectorAll('.zone-assign-delete').forEach(btn=>{
+    btn.addEventListener('click', onDeleteManualDriver);
   });
 }
 
@@ -2071,6 +2086,17 @@ async function onZoneAssignChange(e){
   if(document.getElementById('dashDate').value===date) refreshDashboard();
   if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+}
+
+async function onDeleteManualDriver(e){
+  const driverNo = e.target.dataset.driver;
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const ok = await updateDayAtomic(date, (day)=>{
+    day.manualDrivers = (day.manualDrivers||[]).filter(m=>m.driverNo!==driverNo);
+  });
+  if(!ok) return;
+  toast('Driver '+driverNo+' removed.');
+  await renderZoneAssignment();
 }
 
 document.getElementById('addManualDriverBtn').addEventListener('click', async ()=>{
