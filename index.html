@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.1.3b)</title>
+<title>Goods Outflow — Load-Out Control (3.3.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -99,7 +99,7 @@
     display:flex; gap:4px; background:var(--surface);
     border-bottom:1px solid var(--line);
     padding:6px 12px; overflow-x:auto;
-    position:sticky; top:58px; z-index:29;
+    position:sticky; top:83px; z-index:29;
   }
   nav.tabs button{
     border:none; background:transparent; color:var(--ink-soft);
@@ -274,7 +274,7 @@
   .empu-qr-header{ font-size:16px; margin-bottom:14px; }
   .empu-qr-grid{ display:grid; gap:14px 20px; }
   .empu-qr-cell{ display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; break-inside:avoid; }
-  .empu-qr-driver{ font-weight:700; font-size:24px; font-family:'Barlow Semi Condensed',sans-serif; }
+  .empu-qr-driver{ font-weight:700; font-size:36px; font-family:'Barlow Semi Condensed',sans-serif; }
   .empu-qr-code{ margin-left:auto; line-height:0; }
 
   /* Report */
@@ -383,7 +383,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.1.3b</span>
+    <span class="version-tag" id="versionTagRight">3.3.1b</span>
     <span class="today mono" id="todayLabel"></span>
     <span class="user-badge mono" id="userBadge"></span>
     <button id="logoutBtn" class="switch-user-btn" title="Log out">Log out</button>
@@ -461,6 +461,7 @@
         <span class="lbl">Date</span>
         <input type="date" id="uploadDate"/>
       </label>
+      <div id="currentFileIndicator" style="display:none; margin-bottom:14px; padding:10px 12px; background:var(--accent-soft); border-radius:8px; font-size:13.5px;"></div>
       <div class="dropzone" id="uploadDropzone">
         <div class="dropzone-text">Drag &amp; drop your Excel/CSV file here</div>
         <div class="dropzone-subtext">or use "Choose File" below</div>
@@ -833,6 +834,20 @@
 </div>
 
 <div id="printArea" style="display:none;"></div>
+
+<!-- Generic confirmation modal for destructive actions (e.g. re-upload overwrite) -->
+<div class="modal-overlay" id="confirmModalOverlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <strong id="confirmModalTitle">Confirm</strong>
+    </div>
+    <div class="modal-body" id="confirmModalBody" style="padding:18px 20px; font-size:14.5px; line-height:1.5;"></div>
+    <div class="btn-row" style="padding:0 20px 18px; justify-content:flex-end; gap:10px;">
+      <button class="btn btn-ghost" id="confirmModalCancel">Cancel</button>
+      <button class="btn btn-danger" id="confirmModalProceed">Proceed anyway</button>
+    </div>
+  </div>
+</div>
 
 </div><!-- /#appShell -->
 
@@ -1826,6 +1841,25 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     return;
   }
 
+  // Re-uploading over a date that already has data wipes out everything done
+  // against it so far — scans, deliveries, report status. Always confirm,
+  // whether the new file is different data or a re-upload of the same file.
+  const existingDay = await loadDay(date);
+  if(existingDay && existingDay.records && existingDay.records.length){
+    const proceed = await confirmDialog(
+      'Re-upload will erase existing data',
+      '<div><b>Data already exists for '+date+' ('+existingDay.records.length+' order(s)).</b></div>'
+        + '<div style="margin-top:10px;">Uploading now will <b>permanently erase</b> this date\u2019s existing data, '
+        + '<b>including any deliveries already scanned, in-transit statuses, and a report already generated for this date.</b></div>'
+        + '<div style="margin-top:10px;">This cannot be undone.</div>'
+    );
+    if(!proceed){
+      statusEl.textContent = 'Upload cancelled.';
+      document.getElementById('uploadFile').value = '';
+      return;
+    }
+  }
+
   statusEl.textContent = 'Reading file…';
 
   try{
@@ -1960,7 +1994,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     }
     if(!records.length && !externalReturns.length && !preloadOrders.length){ statusEl.textContent = 'No valid order rows found.'; return; }
 
-    const dayObj = { date, uploadedAt: new Date().toISOString(), records, externalReturns, preloadOrders };
+    const dayObj = { date, uploadedAt: new Date().toISOString(), uploadedFileName: file.name, records, externalReturns, preloadOrders };
     await saveDay(date, dayObj);
     await addDateToIndex(date);
     const withinRetention = date >= isoDaysAgo(RETENTION_DAYS-1);
@@ -1974,9 +2008,13 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       + (integratedFromPreload ? ' <span style="color:#7B3FE4; font-weight:600;">'+integratedFromPreload+' order(s) integrated from preload data.</span>' : '')
       + (withinRetention ? '' : ' <span style="color:var(--warning); font-weight:600;">Note: this date is older than the '+RETENTION_DAYS+'-day retention window and will be removed on next cleanup.</span>');
     document.getElementById('uploadPreviewCard').style.display = 'block';
-    document.getElementById('uploadSummaryText').textContent =
+    document.getElementById('uploadSummaryText').innerHTML =
       records.length+' orders across '+groups.length+' zone/driver group(s), '+
-      records.reduce((s,r)=>s+r.items,0)+' total items.';
+      records.reduce((s,r)=>s+r.items,0)+' total items.'
+      + '<div class="mono" style="margin-top:4px;">File: '+escapeHtml(file.name)+'</div>';
+    const indicatorEl = document.getElementById('currentFileIndicator');
+    indicatorEl.style.display = 'block';
+    indicatorEl.innerHTML = 'Uploaded for '+date+': <b class="mono">'+escapeHtml(file.name)+'</b>';
 
     document.getElementById('formsDate').value = date;
     document.getElementById('dashDate').value = date;
@@ -2076,6 +2114,11 @@ async function onZoneAssignChange(e){
       const entry = day.manualDrivers.find(m=>m.driverNo===driverNo);
       if(entry) entry.zone = zone;
     }
+    // External Returns are excluded from the main upload dataset and never go
+    // through zone assignment on their own — the same driver's zone applies
+    // to their return too, so the Report's External Returns table isn't left
+    // showing a blank zone.
+    (day.externalReturns||[]).forEach(r=>{ if(r.driverNo===driverNo) r.zone = zone; });
   });
   if(!ok) return;
   toast(zone ? 'Driver '+driverNo+' assigned to Zone '+zone : 'Driver '+driverNo+' unassigned');
@@ -2139,6 +2182,10 @@ document.getElementById('swapZonesBtn').addEventListener('click', async ()=>{
     (day.manualDrivers||[]).forEach(m=>{
       if(m.driverNo===driverA) m.zone = zoneB;
       else if(m.driverNo===driverB) m.zone = zoneA;
+    });
+    (day.externalReturns||[]).forEach(r=>{
+      if(r.driverNo===driverA) r.zone = zoneB;
+      else if(r.driverNo===driverB) r.zone = zoneA;
     });
   });
   if(!ok) return;
@@ -2310,6 +2357,22 @@ document.getElementById('preloadProcessBtn').addEventListener('click', async ()=
   const statusEl = document.getElementById('preloadUploadStatus');
   if(!file){ statusEl.textContent = 'Choose a file first.'; return; }
   if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+
+  const existingPreload = await loadPreloadOrders(date);
+  if(existingPreload && existingPreload.length){
+    const proceed = await confirmDialog(
+      'Re-upload will erase existing preload data',
+      '<div><b>Preload data already exists for '+date+' ('+existingPreload.length+' order(s)).</b></div>'
+        + '<div style="margin-top:10px;">Uploading now will <b>permanently erase</b> this date\u2019s existing preload data, '
+        + '<b>including any orders already scanned as in-transit or delivered.</b></div>'
+        + '<div style="margin-top:10px;">This cannot be undone.</div>'
+    );
+    if(!proceed){
+      statusEl.textContent = 'Upload cancelled.';
+      document.getElementById('preloadFile').value = '';
+      return;
+    }
+  }
 
   const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
   if(isPdf){
@@ -2563,9 +2626,11 @@ async function showExistingUploadSummary(date){
   const day = await loadDay(date);
   const statusEl = document.getElementById('uploadStatus');
   const previewCard = document.getElementById('uploadPreviewCard');
+  const indicatorEl = document.getElementById('currentFileIndicator');
   if(!day || !day.records.length){
     statusEl.textContent = '';
     previewCard.style.display = 'none';
+    indicatorEl.style.display = 'none';
     lastUploadGroups = null;
     lastUploadDate = null;
     return;
@@ -2575,9 +2640,17 @@ async function showExistingUploadSummary(date){
   lastUploadDate = date;
   statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Showing the existing upload for '+date+'.</span>';
   previewCard.style.display = 'block';
-  document.getElementById('uploadSummaryText').textContent =
+  const fileNameLine = day.uploadedFileName ? '<div class="mono" style="margin-top:4px;">File: '+escapeHtml(day.uploadedFileName)+'</div>' : '';
+  document.getElementById('uploadSummaryText').innerHTML =
     day.records.length+' orders across '+groups.length+' zone/driver group(s), '+
-    day.records.reduce((s,r)=>s+r.items,0)+' total items.';
+    day.records.reduce((s,r)=>s+r.items,0)+' total items.' + fileNameLine;
+  if(day.uploadedFileName){
+    indicatorEl.style.display = 'block';
+    indicatorEl.innerHTML = 'Uploaded for '+date+': <b class="mono">'+escapeHtml(day.uploadedFileName)+'</b>';
+  }else{
+    // Data exists for this date but predates filename tracking — nothing to show here.
+    indicatorEl.style.display = 'none';
+  }
 }
 
 function groupByZoneDriver(records){
@@ -2667,21 +2740,25 @@ window.viewEmpuQrForm = async function(){
     return;
   }
 
-  // Scale columns/QR size down as the driver count grows, so everything
+  // Scale columns/QR size/font down as the driver count grows, so everything
   // still fits on a single portrait page rather than spilling onto a second.
+  // The previous tiers (up to 130px QR at 24px font) already overflowed a
+  // single page at as few as 8 drivers — recalibrated and verified by
+  // rendering each tier at its maximum driver count against the actual A4
+  // printable height, including the larger driver-no. font requested.
   const n = drivers.length;
-  let columns, qrSize;
-  if(n <= 8){ columns = 1; qrSize = 130; }
-  else if(n <= 16){ columns = 2; qrSize = 105; }
-  else if(n <= 30){ columns = 3; qrSize = 85; }
-  else if(n <= 50){ columns = 4; qrSize = 68; }
-  else { columns = 5; qrSize = 56; }
+  let columns, qrSize, fontSize;
+  if(n <= 6){ columns = 1; qrSize = 115; fontSize = 36; }
+  else if(n <= 14){ columns = 2; qrSize = 100; fontSize = 28; }
+  else if(n <= 27){ columns = 3; qrSize = 78; fontSize = 22; }
+  else if(n <= 44){ columns = 4; qrSize = 62; fontSize = 18; }
+  else { columns = 5; qrSize = 48; fontSize = 15; }
 
   const cells = drivers.map((d, i)=>{
     const code = buildZqrCode(d.zone, date);
     const qrId = 'empuqr_'+i;
     return '<div class="empu-qr-cell">'
-      + '<div class="empu-qr-driver">'+escapeHtml(d.driverNo)+'</div>'
+      + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
       + '<div class="empu-qr-code" id="'+qrId+'"></div>'
       + '<!--QR::'+qrId+'::'+escapeHtml(code)+'-->'
       + '</div>';
@@ -2722,8 +2799,8 @@ window.printEmpuQrForm = function(){
   const area = document.getElementById('printArea');
   area.innerHTML = currentEmpuQrHtml;
   const n = area.querySelectorAll('.empu-qr-cell').length;
-  let size = 130;
-  if(n>50) size=56; else if(n>30) size=68; else if(n>16) size=85; else if(n>8) size=105;
+  let size = 115;
+  if(n>44) size=48; else if(n>27) size=62; else if(n>14) size=78; else if(n>6) size=100;
   setTimeout(()=>{
     renderQrPlaceholdersSized(area, size);
     setTimeout(()=>window.print(), 150);
@@ -2758,7 +2835,7 @@ async function renderFormsList(){
   window._formsCache = groups;
 }
 
-async function buildZqrFormHtml(date, g, _unused, isPreloadForm){
+async function buildZqrFormHtml(date, g, _unused, isPreloadForm, pageNum, totalPages){
   const qrId = 'qr_'+uid();
   const preloadTag = isPreloadForm ? '<span class="badge preload-form-badge">PRELOAD</span> ' : '';
 
@@ -2801,7 +2878,9 @@ async function buildZqrFormHtml(date, g, _unused, isPreloadForm){
     + '<div><label>PRINTED NAME</label><div class="line"></div></div>'
     + '<div><label>DATE</label><div class="line"></div></div>'
     + '<div><label>TIME</label><div class="line"></div></div></div>'
-    + '<div class="zqr-footer">IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative</div>'
+    + '<div class="zqr-footer">IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative'
+    + (totalPages && totalPages>1 ? '<span style="float:right;">Page '+pageNum+' of '+totalPages+'</span>' : '')
+    + '</div>'
     + '</div>'
     + '<!--QR::'+qrId+'::'+zqrText+'-->';
 }
@@ -2847,7 +2926,7 @@ function qrDataUrl(text, size){
   });
 }
 
-async function drawZqrFormPdf(doc, date, g, startNewPage){
+async function drawZqrFormPdf(doc, date, g, startNewPage, pageNum, totalPages){
   if(startNewPage) doc.addPage();
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 14;
@@ -2943,6 +3022,9 @@ async function drawZqrFormPdf(doc, date, g, startNewPage){
 
   doc.setFontSize(8); doc.setTextColor(140); doc.setFont('helvetica','normal');
   doc.text('IKEA Adelaide · Goods Outflow (GFO) · Load Out Right Initiative', pageWidth/2, 287, {align:'center'});
+  if(totalPages && totalPages > 1){
+    doc.text('Page '+pageNum+' of '+totalPages, pageWidth-marginX, 287, {align:'right'});
+  }
 }
 
 function showPdfModal(title, doc, filename, previewHtml){
@@ -2988,7 +3070,7 @@ window.viewFormPdf = async function(date, idx){
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({unit:'mm', format:'a4'});
     if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
-    await drawZqrFormPdf(doc, date, g, false);
+    await drawZqrFormPdf(doc, date, g, false, 1, 1);
     const filename = 'ZQR_'+date+'_Zone-'+g.zone+'_Driver-'+g.driverNo+'.pdf';
     showPdfModal('Zone '+g.zone+' — Driver '+g.driverNo, doc, filename, await buildZqrFormHtml(date, g));
   }catch(err){
@@ -3007,9 +3089,9 @@ window.viewAllFormsPdf = async function(date){
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({unit:'mm', format:'a4'});
     if(typeof doc.autoTable !== 'function'){ throw new Error('PDF table library (autotable) did not load — check your internet connection.'); }
-    for(let i=0;i<groups.length;i++){ await drawZqrFormPdf(doc, date, groups[i], i>0); }
+    for(let i=0;i<groups.length;i++){ await drawZqrFormPdf(doc, date, groups[i], i>0, i+1, groups.length); }
     const filename = 'ZQR_'+date+'_all-forms.pdf';
-    const previewHtml = (await Promise.all(groups.map(g=>buildZqrFormHtml(date, g)))).join('');
+    const previewHtml = (await Promise.all(groups.map((g,i)=>buildZqrFormHtml(date, g, false, false, i+1, groups.length)))).join('');
     showPdfModal('All ZQR forms — '+date, doc, filename, previewHtml);
   }catch(err){
     console.error(err);
@@ -3035,13 +3117,43 @@ document.getElementById('modalOverlay').addEventListener('click', (e)=>{
   if(e.target.id==='modalOverlay') document.getElementById('modalOverlay').classList.remove('show');
 });
 
+/* Reusable confirmation dialog (supports HTML/bold in the body, unlike the
+   native confirm()). Returns a Promise<boolean> — true if the person clicked
+   "Proceed anyway", false for Cancel or dismissing the overlay. */
+function confirmDialog(title, bodyHtml, proceedLabel){
+  return new Promise((resolve)=>{
+    const overlay = document.getElementById('confirmModalOverlay');
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalBody').innerHTML = bodyHtml;
+    const proceedBtn = document.getElementById('confirmModalProceed');
+    proceedBtn.textContent = proceedLabel || 'Proceed anyway';
+    overlay.classList.add('show');
+
+    function cleanup(result){
+      overlay.classList.remove('show');
+      proceedBtn.removeEventListener('click', onProceed);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlayClick);
+      resolve(result);
+    }
+    function onProceed(){ cleanup(true); }
+    function onCancel(){ cleanup(false); }
+    function onOverlayClick(e){ if(e.target===overlay) cleanup(false); }
+
+    const cancelBtn = document.getElementById('confirmModalCancel');
+    proceedBtn.addEventListener('click', onProceed);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlayClick);
+  });
+}
+
 window.printForms = async function(date, idx){
   const day = await loadDay(date);
   if(!day) return;
   const groups = groupByZoneDriver(day.records);
   const target = idx===null ? groups : [groups[idx]];
   const area = document.getElementById('printArea');
-  area.innerHTML = (await Promise.all(target.map(g=>buildZqrFormHtml(date, g, true)))).join('');
+  area.innerHTML = (await Promise.all(target.map((g,i)=>buildZqrFormHtml(date, g, true, false, i+1, target.length)))).join('');
   setTimeout(()=>{
     renderQrPlaceholders(area);
     setTimeout(()=>window.print(), 150);
