@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.8.1b)</title>
+<title>Goods Outflow — Load-Out Control (3.13.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -368,6 +368,9 @@
     <input type="text" id="storeCodeInput" placeholder="e.g. 557" autocomplete="off" inputmode="numeric"/>
     <button class="btn btn-primary" id="storeCodeSubmit" style="width:100%; margin-top:10px;">Continue</button>
     <div id="storeCodeError" class="login-error"></div>
+    <div style="text-align:center; margin-top:18px;">
+      <a href="#" id="adminLoginLink" style="font-size:11px; color:var(--line); text-decoration:none;">Admin</a>
+    </div>
   </div>
 
   <div class="login-card" id="userCodeCard" style="display:none;">
@@ -381,6 +384,40 @@
   </div>
 </div>
 
+<!-- Admin module: completely separate from the manager/user login system —
+     reachable only via the inconspicuous "Admin" link on the store code
+     screen, gated by the admin password, never by M01/TL01/LL01 login. -->
+<div id="adminModule" class="login-gate" style="display:none;">
+  <div class="login-card" style="max-width:520px;">
+    <div class="login-brand">IKEA — Goods Outflow</div>
+    <h2>Admin</h2>
+    <div class="subtext">Store registration and master access — not part of any store's manager login.</div>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line); text-align:left;">
+      <div class="subtext" style="margin-bottom:8px;">Add a new store code — its location name is used to look up the header weather display automatically.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="adminNewStoreCode" placeholder="Store code (e.g. 558)" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <input type="text" id="adminNewStoreName" placeholder="Location name (e.g. Melbourne Airport)" style="flex:2; min-width:180px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <button class="btn btn-primary" id="adminAddStoreBtn">Add store</button>
+      </div>
+      <div id="adminStoreStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
+      <div id="adminStoreList" style="margin-top:14px;"></div>
+    </div>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line); text-align:left;">
+      <div class="subtext" style="margin-bottom:8px;">Create a master access code — manager-level access that works for any store, for your own use when troubleshooting.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="adminMasterCodeInput" value="VJ01" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <button class="btn btn-primary" id="adminCreateMasterBtn">Create master access</button>
+      </div>
+      <div id="adminMasterStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
+      <div id="adminMasterList" style="margin-top:14px;"></div>
+    </div>
+
+    <button class="btn btn-ghost" id="adminBackBtn" style="width:100%; margin-top:16px;">Back to login</button>
+  </div>
+</div>
+
 <div id="appShell" style="display:none;">
 
 <header class="appbar">
@@ -389,7 +426,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.8.1b</span>
+    <span class="version-tag" id="versionTagRight">3.13.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -506,12 +543,15 @@
       </div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div class="subtext" style="margin-bottom:8px;">Swap the zones of two drivers.</div>
+        <div class="subtext" style="margin-bottom:8px;">Swap two drivers — either just their zones, or their entire job (useful when a driver doesn't show up or their vehicle isn't available at the last minute).</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <select id="swapDriverA" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
           <span class="subtext" style="margin:0;">with</span>
           <select id="swapDriverB" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
-          <button class="btn btn-ghost" id="swapZonesBtn">Swap</button>
+        </div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-ghost" id="swapZonesBtn">Swap zones only</button>
+          <button class="btn btn-danger" id="swapEntireJobBtn">Swap entire job</button>
         </div>
       </div>
     </div>
@@ -525,6 +565,16 @@
         <button class="btn btn-primary" id="manualAssignOrderBtn">Assign</button>
       </div>
       <div id="manualAssignStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
+
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div class="subtext" style="margin-bottom:8px;">Manage an existing manually-assigned order — mark it delivered without scanning, or remove it entirely.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <input type="text" id="manualOrderManageInput" placeholder="Order No." style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+          <button class="btn btn-ghost" id="manualMarkDeliveredBtn">Mark Delivered</button>
+          <button class="btn btn-danger" id="manualClearOrderBtn">Clear</button>
+        </div>
+        <div id="manualManageStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -866,6 +916,26 @@
 
 </div><!-- /#appShell -->
 
+<!-- Admin password prompt — outside #appShell so it's reachable from the
+     login screen's Admin link too, not just from inside the logged-in app -->
+<div class="modal-overlay" id="adminPasswordOverlay">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-head">
+      <strong>Admin password required</strong>
+    </div>
+    <div class="modal-body" style="padding:18px 20px; font-size:14.5px; line-height:1.5;">
+      <div class="subtext" style="margin-bottom:10px;">Enter the admin password to continue.</div>
+      <input type="password" id="adminPasswordInput" placeholder="Admin password" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; box-sizing:border-box;"/>
+      <div id="adminPasswordError" style="color:var(--danger); font-size:13px; margin-top:8px; min-height:16px;"></div>
+    </div>
+    <div class="btn-row" style="padding:0 20px 18px; justify-content:flex-end; gap:10px;">
+      <button class="btn btn-ghost" id="adminPasswordCancel">Cancel</button>
+      <button class="btn btn-primary" id="adminPasswordSubmit">Unlock</button>
+    </div>
+  </div>
+</div>
+
+
 <script>
 /* ============================= STORAGE HELPERS =============================
    Shared app data (uploads, ZQR forms, scans, reports, activity log) is now
@@ -936,6 +1006,7 @@ async function localDelete(key){
 let currentStoreCode = null;
 let currentUserCode = null;
 let currentUserRole = null; // 'manager' | 'coworker'
+let currentUserIsMasterAccess = false; // true for VJ01 or any other admin-created master code — full feature access, not just standard manager
 function storeKey(suffix){
   return 'loadout:'+currentStoreCode+':'+suffix;
 }
@@ -1074,12 +1145,10 @@ function formatHeaderDate(dateStr){
   return String(d).padStart(2,'0')+' '+MONTH_NAMES[m-1]+' '+y+', '+DAY_NAMES[dateObj.getDay()];
 }
 
-// Store 557's location, for the header weather display. When store setup
-// becomes an admin-managed feature (entering a location per new store),
-// this should be replaced by that stored value instead.
-const STORE_NAME = 'Adelaide Airport';
-const STORE_LAT = -34.945;
-const STORE_LON = 138.531;
+// 557's location is a built-in fallback — used if the dynamic registry
+// (managed via the admin Store Registration page) hasn't been seeded for it
+// yet. Any other store's location comes entirely from that registry.
+const FALLBACK_STORE_LOCATIONS = { '557': { name:'Adelaide Airport', lat:-34.945, lon:138.531 } };
 
 // Open-Meteo WMO weather-interpretation codes, mapped to a single display
 // symbol — matches the app's icon-first, minimal-clutter header style.
@@ -1099,9 +1168,12 @@ function weatherSymbolForCode(code){
 
 async function fetchWeather(){
   const el = document.getElementById('weatherLabel');
-  if(!el || currentStoreCode!=='557') return;
+  if(!el || !currentStoreCode) return;
+  const registry = await loadStoreRegistry();
+  const loc = registry[currentStoreCode] || FALLBACK_STORE_LOCATIONS[currentStoreCode];
+  if(!loc || loc.lat===undefined || loc.lon===undefined) return; // no known coordinates for this store yet — nothing to show
   try{
-    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+STORE_LAT+'&longitude='+STORE_LON+'&current=temperature_2m,weather_code&timezone=Australia%2FAdelaide';
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+loc.lat+'&longitude='+loc.lon+'&current=temperature_2m,weather_code&timezone=Australia%2FAdelaide';
     const res = await fetch(url);
     if(!res.ok) throw new Error('weather fetch failed');
     const data = await res.json();
@@ -1219,6 +1291,7 @@ function showView(name){
     preloadInterval = null;
   }
   if(name==='scan') focusActiveInput();
+  if(name==='admin') renderAdminStoreList();
   if(name==='dashboard'){
     refreshDashboard();
     if(dashboardInterval) clearInterval(dashboardInterval);
@@ -1450,7 +1523,44 @@ async function initApp(){
 }
 
 /* ============================= LOGIN (store code + user code) ============================= */
+// 557 stays permanently valid regardless of the dynamic registry below — a
+// safe fallback so login never breaks if Firebase is unreachable or the
+// registry hasn't been seeded yet. Additional stores are added via the
+// admin-only Store Registration page and layer on top of this.
 const VALID_STORE_CODES = ['557'];
+
+// Global store registry — deliberately NOT prefixed by storeKey()/currentStoreCode,
+// since this data has to be readable before any store has been logged into.
+async function loadStoreRegistry(){
+  const raw = await storeGet('storeRegistry');
+  if(!raw) return {};
+  try{ return JSON.parse(raw); }catch(e){ return {}; }
+}
+async function saveStoreRegistry(registry){
+  return await storeSet('storeRegistry', JSON.stringify(registry));
+}
+async function isValidStoreCode(code){
+  if(VALID_STORE_CODES.includes(code)) return true;
+  const registry = await loadStoreRegistry();
+  return !!registry[code];
+}
+
+// Master access codes — created only via the admin module (never by a
+// regular manager login), granting manager-level access for ANY store code,
+// not just one specific store. Global, like the store registry above.
+async function loadMasterAccessCodes(){
+  const raw = await storeGet('masterAccessCodes');
+  if(!raw) return [];
+  try{ return JSON.parse(raw); }catch(e){ return []; }
+}
+async function saveMasterAccessCodes(list){
+  return await storeSet('masterAccessCodes', JSON.stringify(list));
+}
+async function isMasterAccessCode(code){
+  const list = await loadMasterAccessCodes();
+  return list.includes(code);
+}
+
 const MANAGER_CODES = ['M01','TL01','LL01'];
 const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03'];
 const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
@@ -1543,7 +1653,7 @@ async function renderUploadHistory(){
 }
 
 async function renderActivityLog(){
-  const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode);
+  const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
   document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityMyStatusCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityCoworkerCard').style.display = isManagerView ? 'block' : 'none';
@@ -1672,18 +1782,23 @@ function applyRoleUI(role){
     btn.style.display = hide ? 'none' : '';
   });
   const activityBtn = document.getElementById('activityTabBtn');
-  activityBtn.style.display = (ACTIVITY_LOG_CODES.includes(currentUserCode) || role==='coworker') ? '' : 'none';
+  activityBtn.style.display = (ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess || role==='coworker') ? '' : 'none';
   document.getElementById('userBadge').textContent = currentUserCode;
   showView(role==='manager' ? 'dashboard' : 'scan');
 }
 
-function showLoginGate(stage){
+async function showLoginGate(stage){
   document.getElementById('appShell').style.display = 'none';
   document.getElementById('loginGate').style.display = 'flex';
   document.getElementById('storeCodeCard').style.display = stage==='store' ? 'block' : 'none';
   document.getElementById('userCodeCard').style.display = stage==='user' ? 'block' : 'none';
   if(stage==='user'){
     document.getElementById('userCodeStoreLine').textContent = 'Store '+currentStoreCode;
+    const registry = await loadStoreRegistry();
+    const loc = registry[currentStoreCode] || FALLBACK_STORE_LOCATIONS[currentStoreCode];
+    if(loc && loc.name){
+      document.getElementById('userCodeStoreLine').textContent = 'Store '+currentStoreCode+' — '+loc.name;
+    }
     document.getElementById('userCodeInput').value = '';
     document.getElementById('userCodeError').textContent = '';
     setTimeout(()=>document.getElementById('userCodeInput').focus(), 50);
@@ -1865,7 +1980,7 @@ async function completeLogin(){
 
 document.getElementById('storeCodeSubmit').addEventListener('click', async ()=>{
   const val = document.getElementById('storeCodeInput').value.trim();
-  if(!VALID_STORE_CODES.includes(val)){
+  if(!(await isValidStoreCode(val))){
     document.getElementById('storeCodeError').textContent = 'Unrecognised store code.';
     return;
   }
@@ -1877,11 +1992,28 @@ document.getElementById('storeCodeInput').addEventListener('keydown', (e)=>{
   if(e.key==='Enter'){ e.preventDefault(); document.getElementById('storeCodeSubmit').click(); }
 });
 
+document.getElementById('adminLoginLink').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  if(!(await requireAdminUnlock())) return;
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('adminModule').style.display = 'flex';
+  await renderAdminStoreList();
+  await renderAdminMasterList();
+});
+document.getElementById('adminBackBtn').addEventListener('click', ()=>{
+  document.getElementById('adminModule').style.display = 'none';
+  document.getElementById('loginGate').style.display = 'flex';
+  document.getElementById('storeCodeCard').style.display = 'block';
+  document.getElementById('userCodeCard').style.display = 'none';
+});
+
 document.getElementById('userCodeSubmit').addEventListener('click', async ()=>{
   const val = document.getElementById('userCodeInput').value.trim().toUpperCase();
   let role = null;
+  let isMaster = false;
   if(MANAGER_CODES.includes(val)) role = 'manager';
   else if(COWORKER_CODES.includes(val)) role = 'coworker';
+  else if(await isMasterAccessCode(val)){ role = 'manager'; isMaster = true; } // master codes get full feature access, for any store
   if(!role){
     document.getElementById('userCodeError').textContent = 'Unrecognised user code.';
     return;
@@ -1889,6 +2021,7 @@ document.getElementById('userCodeSubmit').addEventListener('click', async ()=>{
   document.getElementById('userCodeError').textContent = '';
   currentUserCode = val;
   currentUserRole = role;
+  currentUserIsMasterAccess = isMaster;
   await localSet('session:userCode:'+currentStoreCode, val);
   await localSet('session:userRole:'+currentStoreCode, role);
   await claimUserCodeSlot(val); // takes over the slot — kicks out any other device logged in as this code
@@ -1925,7 +2058,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   // exceptions — so a shared device always shows who's actually using it
   // right now rather than silently continuing as whoever used it last.
   const savedStore = await localGet('session:storeCode');
-  if(savedStore && VALID_STORE_CODES.includes(savedStore)){
+  if(savedStore && await isValidStoreCode(savedStore)){
     currentStoreCode = savedStore;
     await localDelete('session:userCode:'+savedStore);
     await localDelete('session:userRole:'+savedStore);
@@ -2108,6 +2241,16 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     }
     if(!records.length && !externalReturns.length && !preloadOrders.length){ statusEl.textContent = 'No valid order rows found.'; return; }
 
+    // Auto-assign each driver's vehicle type from their most recent prior
+    // assignment, so a manager doesn't have to re-pick Van/Truck every day
+    // for a driver who consistently uses the same vehicle. Still fully
+    // overridable via the zone assignment toggle afterward. Only considers
+    // history from 2026-09-25 onward, as specified — earlier dates predate
+    // vehicle type tracking entirely.
+    const vehicleHistory = await buildVehicleTypeHistoryMap(date);
+    records.forEach(r=>{ if(!r.vehicleType && vehicleHistory[r.driverNo]) r.vehicleType = vehicleHistory[r.driverNo]; });
+    externalReturns.forEach(r=>{ if(!r.vehicleType && vehicleHistory[r.driverNo]) r.vehicleType = vehicleHistory[r.driverNo]; });
+
     const dayObj = { date, uploadedAt: new Date().toISOString(), uploadedFileName: file.name, uploadedBy: currentUserCode, records, externalReturns, preloadOrders };
     await saveDay(date, dayObj);
     await addDateToIndex(date);
@@ -2143,6 +2286,23 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
 /* ---- Zone assignment: manually map each driver to a unique zone ---- */
 const ZONE_OPTIONS = ['1','2','3','4','5','6','7','A','B','C','D','E1','E2','E3','E4'];
+
+// Vehicle type tracking starts from this date — earlier dates predate the
+// feature entirely and their (nonexistent) data should never be consulted.
+const VEHICLE_TYPE_HISTORY_START = '2026-09-25';
+
+async function buildVehicleTypeHistoryMap(beforeDate){
+  const dates = (await loadDatesIndex()).filter(d => d >= VEHICLE_TYPE_HISTORY_START && d < beforeDate).sort();
+  const map = {};
+  // Oldest first, so each later date's assignment overwrites earlier ones —
+  // the map ends up holding each driver's MOST RECENT prior vehicle type.
+  for(const d of dates){
+    const day = await loadDay(d);
+    if(!day) continue;
+    (day.records||[]).forEach(r=>{ if(r.vehicleType) map[r.driverNo] = r.vehicleType; });
+  }
+  return map;
+}
 
 function getAssignableDriverList(day){
   // A driver whose entire order set came from preload already has a working
@@ -2391,6 +2551,110 @@ document.getElementById('manualAssignOrderBtn').addEventListener('click', async 
   await renderZoneAssignment();
   if(document.getElementById('formsDate').value===date) renderFormsList();
   if(document.getElementById('dashDate').value===date) refreshDashboard();
+});
+
+document.getElementById('swapEntireJobBtn').addEventListener('click', async ()=>{
+  const driverA = document.getElementById('swapDriverA').value;
+  const driverB = document.getElementById('swapDriverB').value;
+  const date = document.getElementById('uploadDate').value || todayISO();
+  if(!driverA || !driverB){ toast('Pick both drivers to swap.'); return; }
+  if(driverA === driverB){ toast('Pick two different drivers.'); return; }
+
+  const day = await loadDay(date);
+  const countA = day ? day.records.filter(r=>r.driverNo===driverA).length : 0;
+  const countB = day ? day.records.filter(r=>r.driverNo===driverB).length : 0;
+
+  const proceed = await confirmDialog(
+    'Swap entire job between drivers',
+    '<div><b>All '+countA+' order(s) currently with Driver '+escapeHtml(driverA)+' will move to Driver '+escapeHtml(driverB)+', and all '+countB+' order(s) currently with Driver '+escapeHtml(driverB)+' will move to Driver '+escapeHtml(driverA)+'.</b></div>'
+      + '<div style="margin-top:10px;">Use this when a driver doesn\u2019t show up or their vehicle isn\u2019t available at the last minute — the entire job hands over to the other driver.</div>'
+  );
+  if(!proceed) return;
+
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    // Vehicle type belongs to the driver, not the job — whoever ends up
+    // driving a reassigned order does so in their OWN van/truck, so vehicle
+    // type follows the new driverNo rather than staying with the old one.
+    const vehicleOf = (dn)=>{
+      const rec = freshDay.records.find(r=>r.driverNo===dn && r.vehicleType);
+      if(rec) return rec.vehicleType;
+      const m = (freshDay.manualDrivers||[]).find(x=>x.driverNo===dn);
+      return m ? m.vehicleType : '';
+    };
+    const vehicleA = vehicleOf(driverA);
+    const vehicleB = vehicleOf(driverB);
+    freshDay.records.forEach(r=>{
+      if(r.driverNo===driverA){ r.driverNo = driverB; r.vehicleType = vehicleB; }
+      else if(r.driverNo===driverB){ r.driverNo = driverA; r.vehicleType = vehicleA; }
+    });
+    (freshDay.externalReturns||[]).forEach(r=>{
+      if(r.driverNo===driverA){ r.driverNo = driverB; r.vehicleType = vehicleB; }
+      else if(r.driverNo===driverB){ r.driverNo = driverA; r.vehicleType = vehicleA; }
+    });
+  });
+  if(!ok) return;
+  toast('Swapped entire job between '+driverA+' and '+driverB+'.');
+  await renderZoneAssignment();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+});
+
+document.getElementById('manualMarkDeliveredBtn').addEventListener('click', async ()=>{
+  const orderNo = document.getElementById('manualOrderManageInput').value.trim();
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const statusEl = document.getElementById('manualManageStatus');
+  if(!orderNo){ statusEl.textContent = 'Enter an order no. first.'; return; }
+  const day = await loadDay(date);
+  const rec = day ? day.records.find(r=>r.orderNo===orderNo) : null;
+  if(!rec){ statusEl.textContent = 'Order '+orderNo+' not found for this date.'; return; }
+  if(!rec.manuallyAdded){ statusEl.textContent = 'Order '+orderNo+' was not manually added — use the normal scan process for it.'; return; }
+  if(rec.status==='delivered'){ statusEl.textContent = 'Order '+orderNo+' is already marked delivered.'; return; }
+  const scannedBy = currentUserCode;
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    const freshRec = freshDay.records.find(r=>r.orderNo===orderNo);
+    if(freshRec){
+      freshRec.status = 'delivered';
+      freshRec.deliveredAt = new Date().toISOString();
+      freshRec.completedBy = scannedBy;
+      freshRec.manuallyDeliveredWithoutScan = true; // never physically scanned — confirmed manually instead
+    }
+  });
+  if(!ok) return;
+  document.getElementById('manualOrderManageInput').value = '';
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Order '+escapeHtml(orderNo)+' marked delivered.</span>';
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+});
+
+document.getElementById('manualClearOrderBtn').addEventListener('click', async ()=>{
+  const orderNo = document.getElementById('manualOrderManageInput').value.trim();
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const statusEl = document.getElementById('manualManageStatus');
+  if(!orderNo){ statusEl.textContent = 'Enter an order no. first.'; return; }
+  const day = await loadDay(date);
+  const rec = day ? day.records.find(r=>r.orderNo===orderNo) : null;
+  if(!rec){ statusEl.textContent = 'Order '+orderNo+' not found for this date.'; return; }
+  if(!rec.manuallyAdded){ statusEl.textContent = 'Order '+orderNo+' was not manually added — it came from the uploaded file and can\'t be cleared here.'; return; }
+
+  const proceed = await confirmDialog(
+    'Remove manually-assigned order',
+    '<div><b>Order '+escapeHtml(orderNo)+'</b> (Driver '+escapeHtml(rec.driverNo)+') will be permanently removed from today\u2019s records.</div>'
+      + '<div style="margin-top:10px;">This cannot be undone.</div>'
+  );
+  if(!proceed) return;
+
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    freshDay.records = freshDay.records.filter(r=>r.orderNo!==orderNo);
+  });
+  if(!ok) return;
+  document.getElementById('manualOrderManageInput').value = '';
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Order '+escapeHtml(orderNo)+' removed.</span>';
+  await renderZoneAssignment();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
 });
 
 document.getElementById('uploadDate').addEventListener('change', async ()=>{
@@ -3428,6 +3692,152 @@ function confirmDialog(title, bodyHtml, proceedLabel){
   });
 }
 
+/* ---- Admin password gate ----
+   This app has no backend server, so this is a deterrent against curious
+   co-workers wandering into resets/changes they shouldn't touch — not real
+   security against someone determined to bypass it (View Source would still
+   reveal this hash, and a determined person could look it up or crack it).
+   Storing the SHA-256 hash rather than the password itself, so it isn't
+   sitting in plain text in the file. */
+const ADMIN_PASSWORD_HASH = '611801d2f5a118c2ab16abfe23a293f504cace81ab8fcf80285754be7ba2da71';
+
+let adminUnlockedThisSession = false; // resets on page reload/logout by design — re-enter each session
+
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function requireAdminUnlock(){
+  if(adminUnlockedThisSession) return Promise.resolve(true);
+  return new Promise((resolve)=>{
+    const overlay = document.getElementById('adminPasswordOverlay');
+    const input = document.getElementById('adminPasswordInput');
+    const errorEl = document.getElementById('adminPasswordError');
+    input.value = '';
+    errorEl.textContent = '';
+    overlay.classList.add('show');
+    setTimeout(()=>input.focus(), 50);
+
+    function cleanup(result){
+      overlay.classList.remove('show');
+      submitBtn.removeEventListener('click', onSubmit);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlayClick);
+      input.removeEventListener('keydown', onKeydown);
+      resolve(result);
+    }
+    async function onSubmit(){
+      const entered = input.value;
+      const hash = await sha256Hex(entered);
+      if(hash === ADMIN_PASSWORD_HASH){
+        adminUnlockedThisSession = true;
+        cleanup(true);
+      }else{
+        errorEl.textContent = 'Incorrect password.';
+        input.value = '';
+        input.focus();
+      }
+    }
+    function onCancel(){ cleanup(false); }
+    function onOverlayClick(e){ if(e.target===overlay) cleanup(false); }
+    function onKeydown(e){ if(e.key==='Enter') onSubmit(); }
+
+    const submitBtn = document.getElementById('adminPasswordSubmit');
+    const cancelBtn = document.getElementById('adminPasswordCancel');
+    submitBtn.addEventListener('click', onSubmit);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlayClick);
+    input.addEventListener('keydown', onKeydown);
+  });
+}
+
+async function renderAdminStoreList(){
+  const listEl = document.getElementById('adminStoreList');
+  const registry = await loadStoreRegistry();
+  const allCodes = [...new Set([...VALID_STORE_CODES, ...Object.keys(registry)])].sort();
+  if(!allCodes.length){ listEl.innerHTML = ''; return; }
+  const rows = allCodes.map(code=>{
+    const loc = registry[code] || FALLBACK_STORE_LOCATIONS[code] || {};
+    return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+escapeHtml(loc.name||'—')+'</td>'
+      + '<td class="mono">'+(loc.lat!==undefined ? loc.lat : '—')+'</td><td class="mono">'+(loc.lon!==undefined ? loc.lon : '—')+'</td></tr>';
+  }).join('');
+  listEl.innerHTML = '<table><thead><tr><th>Store Code</th><th>Location Name</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>{
+  const statusEl = document.getElementById('adminStoreStatus');
+  const code = document.getElementById('adminNewStoreCode').value.trim();
+  const name = document.getElementById('adminNewStoreName').value.trim();
+
+  if(!code){ statusEl.textContent = 'Enter a store code.'; return; }
+  if(!name){ statusEl.textContent = 'Enter a location name.'; return; }
+
+  if(!(await requireAdminUnlock())) return;
+
+  const registry = await loadStoreRegistry();
+  if(VALID_STORE_CODES.includes(code) || registry[code]){
+    statusEl.textContent = 'Store code '+code+' is already registered.';
+    return;
+  }
+
+  // Coordinates are resolved automatically from the location name, rather
+  // than requiring manual entry — weather just won't show for this store if
+  // the lookup fails, but the store itself (what actually matters for
+  // login) still registers fine either way.
+  statusEl.textContent = 'Looking up '+name+'…';
+  let lat, lon;
+  try{
+    const geoRes = await fetch('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(name)+'&count=1&language=en&format=json');
+    const geoData = await geoRes.json();
+    if(geoData && geoData.results && geoData.results[0]){
+      lat = geoData.results[0].latitude;
+      lon = geoData.results[0].longitude;
+    }
+  }catch(e){ /* geocoding failed — proceed without coordinates */ }
+
+  registry[code] = (lat!==undefined && lon!==undefined) ? { name, lat, lon } : { name };
+  const ok = await saveStoreRegistry(registry);
+  if(!ok){ statusEl.textContent = 'Could not save — check your connection and try again.'; return; }
+
+  document.getElementById('adminNewStoreCode').value = '';
+  document.getElementById('adminNewStoreName').value = '';
+  statusEl.innerHTML = (lat!==undefined)
+    ? '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' registered.</span>'
+    : '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' registered, but the location wasn\u2019t recognised — weather won\u2019t show for it. Try a more specific name to fix this later.</span>';
+  await renderAdminStoreList();
+});
+
+async function renderAdminMasterList(){
+  const listEl = document.getElementById('adminMasterList');
+  const codes = await loadMasterAccessCodes();
+  if(!codes.length){ listEl.innerHTML = '<div class="subtext" style="margin-bottom:0;">No master access codes created yet.</div>'; return; }
+  const rows = codes.map(c=>'<tr><td class="mono">'+escapeHtml(c)+'</td><td>Manager access, any store</td></tr>').join('');
+  listEl.innerHTML = '<table><thead><tr><th>Code</th><th>Access</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+document.getElementById('adminCreateMasterBtn').addEventListener('click', async ()=>{
+  const statusEl = document.getElementById('adminMasterStatus');
+  const code = document.getElementById('adminMasterCodeInput').value.trim().toUpperCase();
+  if(!code){ statusEl.textContent = 'Enter a code.'; return; }
+  if(MANAGER_CODES.includes(code) || COWORKER_CODES.includes(code)){
+    statusEl.textContent = 'That code is already in use as a regular user code.';
+    return;
+  }
+
+  if(!(await requireAdminUnlock())) return;
+
+  const codes = await loadMasterAccessCodes();
+  if(codes.includes(code)){ statusEl.textContent = code+' is already a master access code.'; return; }
+  codes.push(code);
+  const ok = await saveMasterAccessCodes(codes);
+  if(!ok){ statusEl.textContent = 'Could not save — check your connection and try again.'; return; }
+
+  statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">'+escapeHtml(code)+' created — logs in as manager-level access for any store.</span>';
+  await renderAdminMasterList();
+});
+
 window.printForms = async function(date, idx){
   const day = await loadDay(date);
   if(!day) return;
@@ -4023,6 +4433,7 @@ async function liveOrderLookup(){
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
       + (empuConnect ? ' <span class="badge empu-connect">EMPU Connect</span>' : '')
       + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
+      + (found.manuallyAdded ? ' <span class="badge" style="background:var(--danger); color:#fff;">Not in manifest</span>' : '')
       + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
       + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
