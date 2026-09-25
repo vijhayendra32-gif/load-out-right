@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.13.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.15.2b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -33,6 +33,25 @@
     --radius:10px;
     --shadow: 0 1px 2px rgba(18,24,31,0.06), 0 6px 20px rgba(18,24,31,0.05);
   }
+  :root[data-theme="dark"]{
+    --bg:#14181D;
+    --surface:#1E242B;
+    --ink:#E8ECEF;
+    --ink-soft:#9BA5B0;
+    --line:#333B44;
+    --accent:#5B8AC0;
+    --accent-ink:#0D1216;
+    --accent-soft:#26313D;
+    --success:#3FBE79;
+    --success-soft:#163024;
+    --danger:#E5605C;
+    --danger-soft:#3A1D1D;
+    --warning:#E3A542;
+    --warning-soft:#382A12;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.25);
+  }
+  body.a11y-large-text{ font-size:112.5%; }
+  body.a11y-large-text .mono{ font-size:1.08em; }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -362,11 +381,11 @@
 <!-- LOGIN GATE -->
 <div id="loginGate" class="login-gate">
   <div class="login-card" id="storeCodeCard">
-    <div class="login-brand">IKEA — Goods Outflow</div>
-    <h2>Enter Store Code</h2>
-    <div class="subtext">This sets up (or opens) this store's own data on this device.</div>
+    <div class="login-brand" data-i18n="login.brand">IKEA — Goods Outflow</div>
+    <h2 data-i18n="login.storeTitle">Enter Store Code</h2>
+    <div class="subtext" data-i18n="login.storeSubtext">This sets up (or opens) this store's own data on this device.</div>
     <input type="text" id="storeCodeInput" placeholder="e.g. 557" autocomplete="off" inputmode="numeric"/>
-    <button class="btn btn-primary" id="storeCodeSubmit" style="width:100%; margin-top:10px;">Continue</button>
+    <button class="btn btn-primary" id="storeCodeSubmit" style="width:100%; margin-top:10px;" data-i18n="login.continue">Continue</button>
     <div id="storeCodeError" class="login-error"></div>
     <div style="text-align:center; margin-top:18px;">
       <a href="#" id="adminLoginLink" style="font-size:11px; color:var(--line); text-decoration:none;">Admin</a>
@@ -374,13 +393,13 @@
   </div>
 
   <div class="login-card" id="userCodeCard" style="display:none;">
-    <div class="login-brand">IKEA — Goods Outflow</div>
-    <h2>Enter User Code</h2>
+    <div class="login-brand" data-i18n="login.brand">IKEA — Goods Outflow</div>
+    <h2 data-i18n="login.userTitle">Enter User Code</h2>
     <div class="subtext" id="userCodeStoreLine"></div>
     <input type="text" id="userCodeInput" placeholder="e.g. M01 or CW01" autocomplete="off"/>
-    <button class="btn btn-primary" id="userCodeSubmit" style="width:100%; margin-top:10px;">Log In</button>
+    <button class="btn btn-primary" id="userCodeSubmit" style="width:100%; margin-top:10px;" data-i18n="login.logIn">Log In</button>
     <div id="userCodeError" class="login-error"></div>
-    <button class="btn btn-ghost" id="changeStoreBtn" style="width:100%; margin-top:8px;">Change store</button>
+    <button class="btn btn-ghost" id="changeStoreBtn" style="width:100%; margin-top:8px;" data-i18n="login.changeStore">Change store</button>
   </div>
 </div>
 
@@ -399,6 +418,7 @@
         <input type="text" id="adminNewStoreCode" placeholder="Store code (e.g. 558)" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
         <input type="text" id="adminNewStoreName" placeholder="Location name (e.g. Melbourne Airport)" style="flex:2; min-width:180px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
         <button class="btn btn-primary" id="adminAddStoreBtn">Add store</button>
+        <button class="btn btn-ghost" id="adminStoreCancelEdit" style="display:none;">Cancel edit</button>
       </div>
       <div id="adminStoreStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
       <div id="adminStoreList" style="margin-top:14px;"></div>
@@ -426,25 +446,26 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.13.0b</span>
+    <span class="version-tag" id="versionTagRight">3.15.2b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
     </div>
     <span class="user-badge mono" id="userBadge"></span>
-    <button id="logoutBtn" class="switch-user-btn" title="Log out">Log out</button>
+    <button id="settingsBtn" class="switch-user-btn" title="Settings">⚙</button>
+    <button id="logoutBtn" class="switch-user-btn" title="Log out" data-i18n="header.logout">Log out</button>
   </div>
 </header>
 
 <nav class="tabs" id="tabs">
-  <button data-view="dashboard" class="active">Dashboard</button>
-  <button data-view="upload">Upload</button>
-  <button data-view="preload">Preload</button>
-  <button data-view="forms">ZQR Forms</button>
-  <button data-view="scan">Scan</button>
-  <button data-view="search">Records</button>
-  <button data-view="report">Report</button>
-  <button data-view="activity" id="activityTabBtn" style="display:none;">Activity Log</button>
+  <button data-view="dashboard" class="active" data-i18n="nav.dashboard">Dashboard</button>
+  <button data-view="upload" data-i18n="nav.upload">Upload</button>
+  <button data-view="preload" data-i18n="nav.preload">Preload</button>
+  <button data-view="forms" data-i18n="nav.forms">ZQR Forms</button>
+  <button data-view="scan" data-i18n="nav.scan">Scan</button>
+  <button data-view="search" data-i18n="nav.search">Records</button>
+  <button data-view="report" data-i18n="nav.report">Report</button>
+  <button data-view="activity" id="activityTabBtn" style="display:none;" data-i18n="nav.activity">Activity Log</button>
 </nav>
 
 <main>
@@ -501,24 +522,24 @@
   <!-- UPLOAD VIEW -->
   <section class="view" id="view-upload">
     <div class="card">
-      <h2>Upload today's order file</h2>
-      <div class="subtext">Upload the Excel export for a day. Uploading again for the same date replaces that day's data — other days are kept for 1 month, then automatically removed.</div>
+      <h2 data-i18n="upload.title">Upload today's order file</h2>
+      <div class="subtext" data-i18n="upload.subtext">Upload the Excel export for a day. Uploading again for the same date replaces that day's data — other days are kept for 1 month, then automatically removed.</div>
       <label class="field">
-        <span class="lbl">Date</span>
+        <span class="lbl" data-i18n="upload.dateLabel">Date</span>
         <input type="date" id="uploadDate"/>
       </label>
       <div id="currentFileIndicator" style="display:none; margin-bottom:14px; padding:10px 12px; background:var(--accent-soft); border-radius:8px; font-size:13.5px;"></div>
       <div class="dropzone" id="uploadDropzone">
-        <div class="dropzone-text">Drag &amp; drop your Excel/CSV file here</div>
-        <div class="dropzone-subtext">or use "Choose File" below</div>
+        <div class="dropzone-text" data-i18n="upload.dropzoneText">Drag &amp; drop your Excel/CSV file here</div>
+        <div class="dropzone-subtext" data-i18n="upload.dropzoneSubtext">or use "Choose File" below</div>
       </div>
       <label class="field">
-        <span class="lbl">Excel file (.xlsx / .csv)</span>
+        <span class="lbl" data-i18n="upload.fileLabel">Excel file (.xlsx / .csv)</span>
         <input type="file" id="uploadFile" accept=".xlsx,.xls,.csv"/>
       </label>
       <div class="btn-row">
-        <button class="btn btn-primary" id="processBtn">Process file</button>
-        <button class="btn btn-danger" id="clearDateBtn">Clear data for this date</button>
+        <button class="btn btn-primary" id="processBtn" data-i18n="upload.processBtn">Process file</button>
+        <button class="btn btn-danger" id="clearDateBtn" data-i18n="upload.clearBtn">Clear data for this date</button>
       </div>
       <div id="uploadStatus" style="margin-top:14px; font-size:13.5px;"></div>
       <div id="clearDateStatus" style="margin-top:6px; font-size:13.5px;"></div>
@@ -535,7 +556,6 @@
       <div id="zoneAssignBox"></div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div class="subtext" style="margin-bottom:8px;">Add a driver who isn't in today's upload yet, so they're available for zone assignment.</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <input type="text" id="manualDriverInput" placeholder="Driver No." style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
           <button class="btn btn-ghost" id="addManualDriverBtn">Add driver</button>
@@ -543,7 +563,6 @@
       </div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div class="subtext" style="margin-bottom:8px;">Swap two drivers — either just their zones, or their entire job (useful when a driver doesn't show up or their vehicle isn't available at the last minute).</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <select id="swapDriverA" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"></select>
           <span class="subtext" style="margin:0;">with</span>
@@ -567,7 +586,6 @@
       <div id="manualAssignStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div class="subtext" style="margin-bottom:8px;">Manage an existing manually-assigned order — mark it delivered without scanning, or remove it entirely.</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <input type="text" id="manualOrderManageInput" placeholder="Order No." style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
           <button class="btn btn-ghost" id="manualMarkDeliveredBtn">Mark Delivered</button>
@@ -914,6 +932,58 @@
   </div>
 </div>
 
+<!-- Personal settings — available to every logged-in user, regardless of role.
+     Changes apply immediately (theme/volume are easier to judge live) and are
+     saved to this device only. -->
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head">
+      <strong data-i18n="settings.title">Settings</strong>
+      <button id="settingsClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:18px 20px; font-size:14.5px; line-height:1.5;">
+
+      <div style="margin-bottom:18px;">
+        <label style="font-weight:600; font-size:13px; display:block; margin-bottom:6px;" data-i18n="settings.language">Language</label>
+        <select id="settingsLanguage" style="width:100%; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;">
+          <option value="en">English</option>
+          <option value="zh">中文 (Mandarin)</option>
+          <option value="hi">हिन्दी (Hindi)</option>
+          <option value="ta">தமிழ் (Tamil)</option>
+          <option value="id">Bahasa Indonesia</option>
+        </select>
+        <div class="subtext" style="margin-top:6px; margin-bottom:0;" data-i18n="settings.languageNote">Main navigation and key labels are translated. Full coverage is still being expanded.</div>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label style="font-weight:600; font-size:13px; display:block; margin-bottom:6px;" data-i18n="settings.appearance">Appearance</label>
+        <div class="vehicle-toggle" id="settingsThemeToggle" style="display:flex; width:100%;">
+          <button data-theme-val="light" style="flex:1;" data-i18n="settings.light">Light</button>
+          <button data-theme-val="dark" style="flex:1;" data-i18n="settings.dark">Dark</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+          <input type="checkbox" id="settingsLargeText"/>
+          <span data-i18n="settings.largeText">Larger text</span>
+        </label>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label style="font-weight:600; font-size:13px; display:block; margin-bottom:6px;" data-i18n="settings.scanVolume">Scan sound volume (transit &amp; delivered)</label>
+        <input type="range" id="settingsScanVolume" min="0" max="100" style="width:100%;"/>
+      </div>
+
+      <div>
+        <label style="font-weight:600; font-size:13px; display:block; margin-bottom:6px;" data-i18n="settings.alertVolume">Wrong-location alert volume</label>
+        <input type="range" id="settingsAlertVolume" min="0" max="100" style="width:100%;"/>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 </div><!-- /#appShell -->
 
 <!-- Admin password prompt — outside #appShell so it's reachable from the
@@ -1002,6 +1072,158 @@ async function localDelete(key){
   catch(e){ console.error('local storage delete failed', e); return false; }
 }
 
+/* ---- Personal settings: per-device only, never synced via Firebase — theme,
+   text size, language, and beep volume are individual device preferences,
+   not shared app data. ---- */
+const DEFAULT_SETTINGS = { theme:'light', largeText:false, language:'en', scanVolume:70, alertVolume:100 };
+let currentSettings = Object.assign({}, DEFAULT_SETTINGS);
+
+// Settings are scoped to the app's own version (read from the version tag
+// already in the header) rather than a fixed key. Locally re-downloaded
+// files opened the same way can end up sharing browser storage even though
+// they're different files — version-scoping means a choice made while
+// testing an older build never silently carries into a newly-downloaded
+// one, while still persisting normally across reloads of the same version.
+function settingsStorageKey(){
+  const v = document.getElementById('versionTagRight');
+  return 'settings:'+(v ? v.textContent.trim() : 'unknown');
+}
+
+async function loadSettings(){
+  const raw = await localGet(settingsStorageKey());
+  if(!raw) return Object.assign({}, DEFAULT_SETTINGS);
+  try{ return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(raw)); }
+  catch(e){ return Object.assign({}, DEFAULT_SETTINGS); }
+}
+async function saveSettings(settings){
+  return await localSet(settingsStorageKey(), JSON.stringify(settings));
+}
+function applySettingsToPage(){
+  document.documentElement.setAttribute('data-theme', currentSettings.theme==='dark' ? 'dark' : 'light');
+  document.body.classList.toggle('a11y-large-text', !!currentSettings.largeText);
+  applyTranslations();
+}
+
+/* ---- Language / translations ----
+   Covers navigation, the login screen, and the Settings modal itself as a
+   genuine, working starting point — not exhaustive coverage of every string
+   in the app yet. Any key missing for the selected language safely falls
+   back to English rather than showing blank text. */
+const TRANSLATIONS = {
+  en: {
+    'nav.dashboard':'Dashboard', 'nav.upload':'Upload', 'nav.preload':'Preload', 'nav.forms':'ZQR Forms',
+    'nav.scan':'Scan', 'nav.search':'Records', 'nav.report':'Report', 'nav.activity':'Activity Log',
+    'login.brand':'IKEA — Goods Outflow', 'login.storeTitle':'Enter Store Code',
+    'login.storeSubtext':"This sets up (or opens) this store's own data on this device.",
+    'login.continue':'Continue', 'login.userTitle':'Enter User Code', 'login.logIn':'Log In',
+    'login.changeStore':'Change store', 'header.logout':'Log out',
+    'settings.title':'Settings', 'settings.language':'Language',
+    'settings.languageNote':'Main navigation and key labels are translated. Full coverage is still being expanded.',
+    'settings.appearance':'Appearance', 'settings.light':'Light', 'settings.dark':'Dark',
+    'settings.largeText':'Larger text', 'settings.scanVolume':'Scan sound volume (transit & delivered)',
+    'settings.alertVolume':'Wrong-location alert volume',
+    'upload.title':"Upload today's order file",
+    'upload.subtext':"Upload the Excel export for a day. Uploading again for the same date replaces that day's data — other days are kept for 1 month, then automatically removed.",
+    'upload.dateLabel':'Date', 'upload.dropzoneText':'Drag & drop your Excel/CSV file here',
+    'upload.dropzoneSubtext':'or use "Choose File" below', 'upload.fileLabel':'Excel file (.xlsx / .csv)',
+    'upload.processBtn':'Process file', 'upload.clearBtn':'Clear data for this date'
+  },
+  zh: {
+    'nav.dashboard':'仪表板', 'nav.upload':'上传', 'nav.preload':'预装', 'nav.forms':'ZQR 表格',
+    'nav.scan':'扫描', 'nav.search':'记录', 'nav.report':'报告', 'nav.activity':'活动日志',
+    'login.brand':'IKEA — 货品出库', 'login.storeTitle':'输入门店代码',
+    'login.storeSubtext':'这将在此设备上设置（或打开）该门店自己的数据。',
+    'login.continue':'继续', 'login.userTitle':'输入用户代码', 'login.logIn':'登录',
+    'login.changeStore':'更改门店', 'header.logout':'登出',
+    'settings.title':'设置', 'settings.language':'语言',
+    'settings.languageNote':'主导航和关键标签已翻译。完整覆盖仍在扩展中。',
+    'settings.appearance':'外观', 'settings.light':'浅色', 'settings.dark':'深色',
+    'settings.largeText':'更大字体', 'settings.scanVolume':'扫描提示音量（在途与已送达）',
+    'settings.alertVolume':'错误地点警报音量',
+    'upload.title':'上传今日订单文件',
+    'upload.subtext':'上传当天的 Excel 导出文件。再次上传同一日期会替换该日期的数据——其他日期的数据会保留 1 个月，之后自动删除。',
+    'upload.dateLabel':'日期', 'upload.dropzoneText':'将 Excel/CSV 文件拖放到此处',
+    'upload.dropzoneSubtext':'或使用下方的"选择文件"', 'upload.fileLabel':'Excel 文件 (.xlsx / .csv)',
+    'upload.processBtn':'处理文件', 'upload.clearBtn':'清除此日期的数据'
+  },
+  hi: {
+    'nav.dashboard':'डैशबोर्ड', 'nav.upload':'अपलोड', 'nav.preload':'प्रीलोड', 'nav.forms':'ZQR फ़ॉर्म',
+    'nav.scan':'स्कैन', 'nav.search':'रिकॉर्ड', 'nav.report':'रिपोर्ट', 'nav.activity':'गतिविधि लॉग',
+    'login.brand':'IKEA — गुड्स आउटफ़्लो', 'login.storeTitle':'स्टोर कोड दर्ज करें',
+    'login.storeSubtext':'यह इस डिवाइस पर इस स्टोर का अपना डेटा सेट (या खोलता) करता है।',
+    'login.continue':'जारी रखें', 'login.userTitle':'उपयोगकर्ता कोड दर्ज करें', 'login.logIn':'लॉग इन करें',
+    'login.changeStore':'स्टोर बदलें', 'header.logout':'लॉग आउट',
+    'settings.title':'सेटिंग्स', 'settings.language':'भाषा',
+    'settings.languageNote':'मुख्य नेविगेशन और मुख्य लेबल अनुवादित हैं। पूर्ण कवरेज अभी विस्तारित की जा रही है।',
+    'settings.appearance':'दिखावट', 'settings.light':'हल्का', 'settings.dark':'गहरा',
+    'settings.largeText':'बड़ा टेक्स्ट', 'settings.scanVolume':'स्कैन ध्वनि वॉल्यूम (ट्रांज़िट और डिलीवर)',
+    'settings.alertVolume':'गलत स्थान चेतावनी वॉल्यूम',
+    'upload.title':'आज की ऑर्डर फ़ाइल अपलोड करें',
+    'upload.subtext':'किसी दिन के लिए Excel एक्सपोर्ट अपलोड करें। उसी तारीख़ के लिए फिर से अपलोड करने पर उस दिन का डेटा बदल जाता है — अन्य दिनों का डेटा 1 महीने तक रखा जाता है, फिर स्वतः हटा दिया जाता है।',
+    'upload.dateLabel':'तारीख़', 'upload.dropzoneText':'अपनी Excel/CSV फ़ाइल यहाँ खींचें और छोड़ें',
+    'upload.dropzoneSubtext':'या नीचे "फ़ाइल चुनें" का उपयोग करें', 'upload.fileLabel':'Excel फ़ाइल (.xlsx / .csv)',
+    'upload.processBtn':'फ़ाइल प्रोसेस करें', 'upload.clearBtn':'इस तारीख़ का डेटा साफ़ करें'
+  },
+  ta: {
+    'nav.dashboard':'டாஷ்போர்டு', 'nav.upload':'பதிவேற்றம்', 'nav.preload':'முன்பதிவு', 'nav.forms':'ZQR படிவங்கள்',
+    'nav.scan':'ஸ்கேன்', 'nav.search':'பதிவுகள்', 'nav.report':'அறிக்கை', 'nav.activity':'செயல்பாட்டு பதிவு',
+    'login.brand':'IKEA — பொருட்கள் வெளியேற்றம்', 'login.storeTitle':'கடை குறியீட்டை உள்ளிடவும்',
+    'login.storeSubtext':'இது இந்தச் சாதனத்தில் இந்தக் கடையின் சொந்த தரவை அமைக்கிறது (அல்லது திறக்கிறது).',
+    'login.continue':'தொடரவும்', 'login.userTitle':'பயனர் குறியீட்டை உள்ளிடவும்', 'login.logIn':'உள்நுழைக',
+    'login.changeStore':'கடையை மாற்று', 'header.logout':'வெளியேறு',
+    'settings.title':'அமைப்புகள்', 'settings.language':'மொழி',
+    'settings.languageNote':'முதன்மை வழிசெலுத்தல் மற்றும் முக்கிய லேபிள்கள் மொழிபெயர்க்கப்பட்டுள்ளன. முழு கவரேஜ் இன்னும் விரிவாக்கப்படுகிறது.',
+    'settings.appearance':'தோற்றம்', 'settings.light':'வெளிச்சம்', 'settings.dark':'இருள்',
+    'settings.largeText':'பெரிய உரை', 'settings.scanVolume':'ஸ்கேன் ஒலி அளவு (போக்குவரத்து & விநியோகம்)',
+    'settings.alertVolume':'தவறான இட எச்சரிக்கை ஒலி அளவு',
+    'upload.title':'இன்றைய ஆர்டர் கோப்பைப் பதிவேற்றவும்',
+    'upload.subtext':'ஒரு நாளுக்கான Excel ஏற்றுமதியைப் பதிவேற்றவும். அதே தேதிக்கு மீண்டும் பதிவேற்றினால் அந்த நாளின் தரவு மாற்றப்படும் — மற்ற நாட்களின் தரவு 1 மாதம் வரை வைக்கப்பட்டு, பின் தானாக அகற்றப்படும்.',
+    'upload.dateLabel':'தேதி', 'upload.dropzoneText':'உங்கள் Excel/CSV கோப்பை இங்கே இழுத்து விடவும்',
+    'upload.dropzoneSubtext':'அல்லது கீழே உள்ள "கோப்பைத் தேர்ந்தெடு" பயன்படுத்தவும்', 'upload.fileLabel':'Excel கோப்பு (.xlsx / .csv)',
+    'upload.processBtn':'கோப்பைச் செயலாக்கு', 'upload.clearBtn':'இந்தத் தேதியின் தரவை அழி'
+  },
+  id: {
+    'nav.dashboard':'Dasbor', 'nav.upload':'Unggah', 'nav.preload':'Pramuat', 'nav.forms':'Formulir ZQR',
+    'nav.scan':'Pindai', 'nav.search':'Catatan', 'nav.report':'Laporan', 'nav.activity':'Log Aktivitas',
+    'login.brand':'IKEA — Goods Outflow', 'login.storeTitle':'Masukkan Kode Toko',
+    'login.storeSubtext':'Ini akan menyiapkan (atau membuka) data toko ini sendiri di perangkat ini.',
+    'login.continue':'Lanjutkan', 'login.userTitle':'Masukkan Kode Pengguna', 'login.logIn':'Masuk',
+    'login.changeStore':'Ganti toko', 'header.logout':'Keluar',
+    'settings.title':'Pengaturan', 'settings.language':'Bahasa',
+    'settings.languageNote':'Navigasi utama dan label utama sudah diterjemahkan. Cakupan penuh masih terus diperluas.',
+    'settings.appearance':'Tampilan', 'settings.light':'Terang', 'settings.dark':'Gelap',
+    'settings.largeText':'Teks lebih besar', 'settings.scanVolume':'Volume suara pindai (transit & terkirim)',
+    'settings.alertVolume':'Volume peringatan lokasi salah',
+    'upload.title':'Unggah file pesanan hari ini',
+    'upload.subtext':'Unggah ekspor Excel untuk satu hari. Mengunggah lagi untuk tanggal yang sama akan menggantikan data hari itu — hari lain disimpan selama 1 bulan, lalu dihapus otomatis.',
+    'upload.dateLabel':'Tanggal', 'upload.dropzoneText':'Seret & lepas file Excel/CSV Anda di sini',
+    'upload.dropzoneSubtext':'atau gunakan "Pilih File" di bawah', 'upload.fileLabel':'File Excel (.xlsx / .csv)',
+    'upload.processBtn':'Proses file', 'upload.clearBtn':'Hapus data untuk tanggal ini'
+  }
+};
+
+function t(key){
+  const lang = currentSettings.language || 'en';
+  return (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.en[key] || key;
+}
+
+function applyTranslations(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const icon = el.querySelector(':scope > .info-icon');
+    if(icon){
+      // setupInfoTooltips() appends an icon (with its popover) as a child
+      // of this element — setting textContent here would wipe that out
+      // entirely. Update just the element's own leading text node instead,
+      // leaving the icon and popover intact.
+      const firstChild = el.childNodes[0];
+      if(firstChild && firstChild.nodeType===3){ firstChild.textContent = t(el.dataset.i18n); }
+      else{ el.insertBefore(document.createTextNode(t(el.dataset.i18n)), el.firstChild); }
+    }else{
+      el.textContent = t(el.dataset.i18n);
+    }
+  });
+}
+
 /* ---- Shared (Firebase-backed) storage: all real app data, synced across every device ---- */
 let currentStoreCode = null;
 let currentUserCode = null;
@@ -1027,6 +1249,29 @@ async function storeDelete(key){
   if(!fbReady) return localDelete(key);
   try{ await fbDatabase.ref(fbSafeKey(key)).remove(); return true; }
   catch(e){ console.error('storage delete failed', e); return false; }
+}
+
+// Deletes EVERY piece of data belonging to one store — day records, dates
+// index, preload orders, reports, activity log, active sessions. All of
+// this app's per-store keys are flat, colon-prefixed nodes at the database
+// root (e.g. "loadout:557:day:2026-09-26"), not a nested "557" subtree, so
+// there's no single path to remove — instead this reads the root, finds
+// every top-level key starting with this store's prefix, and deletes them
+// all in one atomic multi-path update. The trailing colon in the prefix
+// matters: it stops "557" from also matching a different store like "5570".
+async function deleteAllStoreData(storeCode){
+  if(!fbReady) return false;
+  try{
+    const rootSnap = await fbDatabase.ref().get();
+    const rootVal = rootSnap.val() || {};
+    const prefix = fbSafeKey('loadout:'+storeCode+':');
+    const updates = {};
+    Object.keys(rootVal).forEach(key=>{
+      if(key.startsWith(prefix)) updates[key] = null; // null deletes that key in a multi-path update
+    });
+    if(Object.keys(updates).length) await fbDatabase.ref().update(updates);
+    return true;
+  }catch(e){ console.error('deleteAllStoreData failed', e); return false; }
 }
 
 async function loadDatesIndex(){
@@ -1202,13 +1447,15 @@ function toast(msg, ms=2400){
   clearTimeout(t._h);
   t._h = setTimeout(()=>t.classList.remove('show'), ms);
 }
-function beep(freq=880, dur=180){
+function beep(freq=880, dur=180, category='scan'){
   try{
+    const volumePercent = category==='alert' ? currentSettings.alertVolume : currentSettings.scanVolume;
+    if(volumePercent<=0) return; // muted
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type='square'; osc.frequency.value=freq;
-    gain.gain.value=0.15;
+    gain.gain.value = 0.15 * (volumePercent/100); // 0.15 was the original fixed volume — now scaled by the stored preference
     osc.connect(gain); gain.connect(ctx.destination);
     osc.start();
     setTimeout(()=>{ osc.stop(); ctx.close(); }, dur);
@@ -1940,6 +2187,11 @@ function setupInfoTooltips(){
     const popover = document.createElement('div');
     popover.className = 'info-popover';
     popover.innerHTML = subtext.innerHTML;
+    // If the source subtext is translatable, tag the popover with the same
+    // key — otherwise a later language change would update the (now
+    // hidden) subtext but leave this already-copied popover frozen in
+    // whichever language was active when the tooltip was first built.
+    if(subtext.dataset.i18n) popover.dataset.i18n = subtext.dataset.i18n;
     icon.appendChild(popover);
 
     h2.appendChild(document.createTextNode(' '));
@@ -2001,6 +2253,7 @@ document.getElementById('adminLoginLink').addEventListener('click', async (e)=>{
   await renderAdminMasterList();
 });
 document.getElementById('adminBackBtn').addEventListener('click', ()=>{
+  adminUnlockedThisSession = false; // require the password again next time — unlocking should not persist past leaving this page
   document.getElementById('adminModule').style.display = 'none';
   document.getElementById('loginGate').style.display = 'flex';
   document.getElementById('storeCodeCard').style.display = 'block';
@@ -2053,6 +2306,9 @@ document.getElementById('logoutBtn').addEventListener('click', async ()=>{
 });
 
 window.addEventListener('DOMContentLoaded', async ()=>{
+  currentSettings = await loadSettings();
+  applySettingsToPage();
+
   // The store code (this device's location) is remembered, but the user code
   // is deliberately asked for every single time — every user level, no
   // exceptions — so a shared device always shows who's actually using it
@@ -3753,6 +4009,53 @@ function requireAdminUnlock(){
   });
 }
 
+function openSettingsModal(){
+  document.getElementById('settingsLanguage').value = currentSettings.language;
+  document.getElementById('settingsLargeText').checked = !!currentSettings.largeText;
+  document.getElementById('settingsScanVolume').value = currentSettings.scanVolume;
+  document.getElementById('settingsAlertVolume').value = currentSettings.alertVolume;
+  document.querySelectorAll('#settingsThemeToggle button').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.themeVal===currentSettings.theme);
+  });
+  document.getElementById('settingsOverlay').classList.add('show');
+}
+document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+document.getElementById('settingsClose').addEventListener('click', ()=>{
+  document.getElementById('settingsOverlay').classList.remove('show');
+});
+document.getElementById('settingsOverlay').addEventListener('click', (e)=>{
+  if(e.target.id==='settingsOverlay') document.getElementById('settingsOverlay').classList.remove('show');
+});
+
+document.querySelectorAll('#settingsThemeToggle button').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    currentSettings.theme = btn.dataset.themeVal;
+    document.querySelectorAll('#settingsThemeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+    applySettingsToPage();
+    await saveSettings(currentSettings);
+  });
+});
+document.getElementById('settingsLargeText').addEventListener('change', async (e)=>{
+  currentSettings.largeText = e.target.checked;
+  applySettingsToPage();
+  await saveSettings(currentSettings);
+});
+document.getElementById('settingsLanguage').addEventListener('change', async (e)=>{
+  currentSettings.language = e.target.value;
+  await saveSettings(currentSettings);
+  applyTranslations();
+});
+document.getElementById('settingsScanVolume').addEventListener('change', async (e)=>{
+  currentSettings.scanVolume = Number(e.target.value);
+  await saveSettings(currentSettings);
+  beep(660,120,'scan'); // preview at the new level
+});
+document.getElementById('settingsAlertVolume').addEventListener('change', async (e)=>{
+  currentSettings.alertVolume = Number(e.target.value);
+  await saveSettings(currentSettings);
+  beep(180,320,'alert'); // preview at the new level
+});
+
 async function renderAdminStoreList(){
   const listEl = document.getElementById('adminStoreList');
   const registry = await loadStoreRegistry();
@@ -3761,15 +4064,76 @@ async function renderAdminStoreList(){
   const rows = allCodes.map(code=>{
     const loc = registry[code] || FALLBACK_STORE_LOCATIONS[code] || {};
     return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+escapeHtml(loc.name||'—')+'</td>'
-      + '<td class="mono">'+(loc.lat!==undefined ? loc.lat : '—')+'</td><td class="mono">'+(loc.lon!==undefined ? loc.lon : '—')+'</td></tr>';
+      + '<td class="mono">'+(loc.lat!==undefined ? loc.lat : '—')+'</td><td class="mono">'+(loc.lon!==undefined ? loc.lon : '—')+'</td>'
+      + '<td style="white-space:nowrap;">'
+      + '<button class="btn btn-ghost admin-store-edit" data-code="'+escapeHtml(code)+'" style="padding:6px 10px; font-size:12px;">Edit</button> '
+      + '<button class="btn btn-danger admin-store-delete" data-code="'+escapeHtml(code)+'" style="padding:6px 10px; font-size:12px;">Delete</button>'
+      + '</td></tr>';
   }).join('');
-  listEl.innerHTML = '<table><thead><tr><th>Store Code</th><th>Location Name</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  listEl.innerHTML = '<table><thead><tr><th>Store Code</th><th>Location Name</th><th>Latitude</th><th>Longitude</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+
+  listEl.querySelectorAll('.admin-store-edit').forEach(btn=>{
+    btn.addEventListener('click', ()=> startEditStore(btn.dataset.code));
+  });
+  listEl.querySelectorAll('.admin-store-delete').forEach(btn=>{
+    btn.addEventListener('click', ()=> deleteStore(btn.dataset.code));
+  });
+}
+
+let editingStoreCode = null; // null = adding a new store; a code = editing that existing store
+
+async function startEditStore(code){
+  const registry = await loadStoreRegistry();
+  const loc = registry[code] || FALLBACK_STORE_LOCATIONS[code] || {};
+  editingStoreCode = code;
+  const codeInput = document.getElementById('adminNewStoreCode');
+  codeInput.value = code;
+  codeInput.disabled = true; // the code is the database key — changing it would orphan the store's existing data, so only the name (and re-resolved coordinates) can be edited
+  document.getElementById('adminNewStoreName').value = loc.name || '';
+  document.getElementById('adminAddStoreBtn').textContent = 'Save changes';
+  document.getElementById('adminStoreCancelEdit').style.display = '';
+  document.getElementById('adminStoreStatus').textContent = 'Editing store '+code+'.';
+}
+
+function cancelEditStore(){
+  editingStoreCode = null;
+  const codeInput = document.getElementById('adminNewStoreCode');
+  codeInput.value = '';
+  codeInput.disabled = false;
+  document.getElementById('adminNewStoreName').value = '';
+  document.getElementById('adminAddStoreBtn').textContent = 'Add store';
+  document.getElementById('adminStoreCancelEdit').style.display = 'none';
+  document.getElementById('adminStoreStatus').textContent = '';
+}
+document.getElementById('adminStoreCancelEdit').addEventListener('click', cancelEditStore);
+
+async function deleteStore(code){
+  const proceed = await confirmDialog(
+    'Delete store '+code,
+    '<div><b>This will permanently delete the ENTIRE database for store '+escapeHtml(code)+'</b> — every uploaded day, preload order, report, and activity log tied to it.</div>'
+      + '<div style="margin-top:10px;">This cannot be undone.</div>'
+  );
+  if(!proceed) return;
+  if(!(await requireAdminUnlock())) return;
+
+  const statusEl = document.getElementById('adminStoreStatus');
+  statusEl.textContent = 'Deleting store '+code+'…';
+  const registry = await loadStoreRegistry();
+  delete registry[code];
+  await saveStoreRegistry(registry);
+  const ok = await deleteAllStoreData(code);
+  if(editingStoreCode===code) cancelEditStore();
+  statusEl.innerHTML = ok
+    ? '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' and all its data have been deleted.</span>'
+    : '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' removed from the registry, but some of its data may not have been fully deleted — check your connection and try again if needed.</span>';
+  await renderAdminStoreList();
 }
 
 document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>{
   const statusEl = document.getElementById('adminStoreStatus');
   const code = document.getElementById('adminNewStoreCode').value.trim();
   const name = document.getElementById('adminNewStoreName').value.trim();
+  const isEditing = !!editingStoreCode;
 
   if(!code){ statusEl.textContent = 'Enter a store code.'; return; }
   if(!name){ statusEl.textContent = 'Enter a location name.'; return; }
@@ -3777,7 +4141,7 @@ document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>
   if(!(await requireAdminUnlock())) return;
 
   const registry = await loadStoreRegistry();
-  if(VALID_STORE_CODES.includes(code) || registry[code]){
+  if(!isEditing && (VALID_STORE_CODES.includes(code) || registry[code])){
     statusEl.textContent = 'Store code '+code+' is already registered.';
     return;
   }
@@ -3801,11 +4165,12 @@ document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>
   const ok = await saveStoreRegistry(registry);
   if(!ok){ statusEl.textContent = 'Could not save — check your connection and try again.'; return; }
 
-  document.getElementById('adminNewStoreCode').value = '';
-  document.getElementById('adminNewStoreName').value = '';
+  const verb = isEditing ? 'updated' : 'registered';
+  if(isEditing) cancelEditStore(); // resets the form back to "add" mode
+  else{ document.getElementById('adminNewStoreCode').value = ''; document.getElementById('adminNewStoreName').value = ''; }
   statusEl.innerHTML = (lat!==undefined)
-    ? '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' registered.</span>'
-    : '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' registered, but the location wasn\u2019t recognised — weather won\u2019t show for it. Try a more specific name to fix this later.</span>';
+    ? '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' '+verb+'.</span>'
+    : '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' '+verb+', but the location wasn\u2019t recognised — weather won\u2019t show for it. Try a more specific name to fix this later.</span>';
   await renderAdminStoreList();
 });
 
@@ -4093,6 +4458,7 @@ async function handleOrderScan(raw){
                           category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
     renderScanStages();
     if(rec.status==='pending'){
+      beep(660,120,'scan'); // transit sound — distinct from delivered (higher, longer) and errors (lower)
       const recId = rec.id;
       const scannedBy = currentUserCode;
       updateDayAtomic(date, (freshDay)=>{
@@ -4122,7 +4488,7 @@ async function handleOrderScan(raw){
   }
 
   toast('Order '+lookupCode+' not found');
-  beep(220,220);
+  beep(220,220,'alert');
 }
 
 function formatDDMM(dateStr){
@@ -4222,12 +4588,12 @@ async function handlePreloadOrderScanUnified(raw){
   const rec = orders.find(r=>r.orderNo===lookupCode);
   if(!rec){
     toast('Preload order '+lookupCode+' not found for '+date+'.');
-    beep(220,220);
+    beep(220,220,'alert');
     return;
   }
   if(!rec.zone){
     toast('Driver '+rec.driverNo+' has no PL zone assigned yet — assign one on the Preload page first.');
-    beep(220,220);
+    beep(220,220,'alert');
     return;
   }
 
@@ -4236,6 +4602,7 @@ async function handlePreloadOrderScanUnified(raw){
   renderScanStages();
 
   if(rec.status==='pending'){
+    beep(660,120,'scan'); // transit sound — same as the main scan path
     updatePreloadOrdersAtomic(date, (freshOrders)=>{
       const freshRec = freshOrders.find(r=>r.id===rec.id);
       if(freshRec && freshRec.status==='pending'){
@@ -4252,7 +4619,7 @@ async function handleZqrScan(raw){
   const stageEl = document.getElementById('stageBWrap');
   if(!z){
     toast('Not a recognised ZQR code');
-    beep(220,220);
+    beep(220,220,'alert');
     return;
   }
   const match = z.zone===currentScanOrder.zone && z.dateCode===formatDDMMYY(currentScanOrder.date);
@@ -4260,7 +4627,7 @@ async function handleZqrScan(raw){
     // Show the confirmation immediately — the match is already verified above,
     // so the UI doesn't need to wait on the database write to confirm it.
     const savedOrder = currentScanOrder;
-    beep(1046,140);
+    beep(1046,140,'scan');
     stageEl.innerHTML = renderStageB('match');
     setTimeout(()=>{ currentScanOrder=null; renderScanStages(); }, 1600);
 
@@ -4286,7 +4653,7 @@ async function handleZqrScan(raw){
       }
     })();
   }else{
-    beep(180,320);
+    beep(180,320,'alert');
     stageEl.innerHTML = renderStageB('mismatch');
     setupZqrInput(); // fresh input node — needs its scan-detection listeners and focus reattached
   }
