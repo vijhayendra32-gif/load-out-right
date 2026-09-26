@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.15.2b)</title>
+<title>Goods Outflow — Load-Out Control (3.16.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -282,9 +282,8 @@
 
   /* Printable form styling (also used inside preview modal) */
   @media print{
-    body *{ visibility:hidden; }
-    #printArea, #printArea *{ visibility:visible; }
-    #printArea{ display:block !important; position:absolute; top:0; left:0; width:100%; }
+    header.appbar, nav.tabs, main, #toast, .modal-overlay{ display:none !important; }
+    #printArea{ display:block !important; }
     .zqr-print{ border:none; page-break-after:always; }
     .empu-qr-sheet{ page-break-after:auto; }
     @page{ size:portrait; }
@@ -446,7 +445,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.15.2b</span>
+    <span class="version-tag" id="versionTagRight">3.16.1b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -918,20 +917,6 @@
 
 <div id="printArea" style="display:none;"></div>
 
-<!-- Generic confirmation modal for destructive actions (e.g. re-upload overwrite) -->
-<div class="modal-overlay" id="confirmModalOverlay">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-head">
-      <strong id="confirmModalTitle">Confirm</strong>
-    </div>
-    <div class="modal-body" id="confirmModalBody" style="padding:18px 20px; font-size:14.5px; line-height:1.5;"></div>
-    <div class="btn-row" style="padding:0 20px 18px; justify-content:flex-end; gap:10px;">
-      <button class="btn btn-ghost" id="confirmModalCancel">Cancel</button>
-      <button class="btn btn-danger" id="confirmModalProceed">Proceed anyway</button>
-    </div>
-  </div>
-</div>
-
 <!-- Personal settings — available to every logged-in user, regardless of role.
      Changes apply immediately (theme/volume are easier to judge live) and are
      saved to this device only. -->
@@ -951,6 +936,10 @@
           <option value="hi">हिन्दी (Hindi)</option>
           <option value="ta">தமிழ் (Tamil)</option>
           <option value="id">Bahasa Indonesia</option>
+          <option value="fr">Français</option>
+          <option value="ja">日本語 (Japanese)</option>
+          <option value="es">Español</option>
+          <option value="ko">한국어 (Korean)</option>
         </select>
         <div class="subtext" style="margin-top:6px; margin-bottom:0;" data-i18n="settings.languageNote">Main navigation and key labels are translated. Full coverage is still being expanded.</div>
       </div>
@@ -985,6 +974,26 @@
 </div>
 
 </div><!-- /#appShell -->
+
+<!-- Generic confirmation modal for destructive actions (e.g. re-upload
+     overwrite, deleting a store). Outside #appShell so it works correctly
+     when triggered from the standalone Admin module too — a modal nested
+     inside #appShell stays invisible while #appShell itself is hidden (as it
+     is throughout the Admin module), even though the 'show' class still gets
+     added to it, so it would only pop into view later, overlaid on whatever
+     page you next logged into normally. -->
+<div class="modal-overlay" id="confirmModalOverlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <strong id="confirmModalTitle">Confirm</strong>
+    </div>
+    <div class="modal-body" id="confirmModalBody" style="padding:18px 20px; font-size:14.5px; line-height:1.5;"></div>
+    <div class="btn-row" style="padding:0 20px 18px; justify-content:flex-end; gap:10px;">
+      <button class="btn btn-ghost" id="confirmModalCancel">Cancel</button>
+      <button class="btn btn-danger" id="confirmModalProceed">Proceed anyway</button>
+    </div>
+  </div>
+</div>
 
 <!-- Admin password prompt — outside #appShell so it's reachable from the
      login screen's Admin link too, not just from inside the logged-in app -->
@@ -1199,6 +1208,78 @@ const TRANSLATIONS = {
     'upload.dateLabel':'Tanggal', 'upload.dropzoneText':'Seret & lepas file Excel/CSV Anda di sini',
     'upload.dropzoneSubtext':'atau gunakan "Pilih File" di bawah', 'upload.fileLabel':'File Excel (.xlsx / .csv)',
     'upload.processBtn':'Proses file', 'upload.clearBtn':'Hapus data untuk tanggal ini'
+  },
+  fr: {
+    'nav.dashboard':'Tableau de bord', 'nav.upload':'Téléverser', 'nav.preload':'Préchargement', 'nav.forms':'Formulaires ZQR',
+    'nav.scan':'Scanner', 'nav.search':'Registres', 'nav.report':'Rapport', 'nav.activity':"Journal d'activité",
+    'login.brand':'IKEA — Sortie de marchandises', 'login.storeTitle':'Entrer le code du magasin',
+    'login.storeSubtext':'Ceci configure (ou ouvre) les données propres à ce magasin sur cet appareil.',
+    'login.continue':'Continuer', 'login.userTitle':'Entrer le code utilisateur', 'login.logIn':'Se connecter',
+    'login.changeStore':'Changer de magasin', 'header.logout':'Déconnexion',
+    'settings.title':'Paramètres', 'settings.language':'Langue',
+    'settings.languageNote':"La navigation principale et les libellés clés sont traduits. La couverture complète est encore en cours d'extension.",
+    'settings.appearance':'Apparence', 'settings.light':'Clair', 'settings.dark':'Sombre',
+    'settings.largeText':'Texte plus grand', 'settings.scanVolume':'Volume du son de scan (transit et livré)',
+    'settings.alertVolume':"Volume de l'alerte de mauvais emplacement",
+    'upload.title':'Téléverser le fichier de commandes du jour',
+    'upload.subtext':"Téléversez l'export Excel pour une journée. Téléverser à nouveau pour la même date remplace les données de ce jour — les autres jours sont conservés pendant 1 mois, puis automatiquement supprimés.",
+    'upload.dateLabel':'Date', 'upload.dropzoneText':'Glissez-déposez votre fichier Excel/CSV ici',
+    'upload.dropzoneSubtext':'ou utilisez « Choisir un fichier » ci-dessous', 'upload.fileLabel':'Fichier Excel (.xlsx / .csv)',
+    'upload.processBtn':'Traiter le fichier', 'upload.clearBtn':'Effacer les données de cette date'
+  },
+  ja: {
+    'nav.dashboard':'ダッシュボード', 'nav.upload':'アップロード', 'nav.preload':'プリロード', 'nav.forms':'ZQRフォーム',
+    'nav.scan':'スキャン', 'nav.search':'記録', 'nav.report':'レポート', 'nav.activity':'活動ログ',
+    'login.brand':'IKEA — 商品出庫', 'login.storeTitle':'店舗コードを入力',
+    'login.storeSubtext':'このデバイスでこの店舗独自のデータを設定（または開き）ます。',
+    'login.continue':'続ける', 'login.userTitle':'ユーザーコードを入力', 'login.logIn':'ログイン',
+    'login.changeStore':'店舗を変更', 'header.logout':'ログアウト',
+    'settings.title':'設定', 'settings.language':'言語',
+    'settings.languageNote':'主要なナビゲーションと主なラベルは翻訳されています。完全な対応は現在拡張中です。',
+    'settings.appearance':'外観', 'settings.light':'ライト', 'settings.dark':'ダーク',
+    'settings.largeText':'文字を大きく', 'settings.scanVolume':'スキャン音量（輸送中・配達済み）',
+    'settings.alertVolume':'誤った場所の警告音量',
+    'upload.title':'本日の注文ファイルをアップロード',
+    'upload.subtext':'その日のExcelエクスポートをアップロードします。同じ日付に再度アップロードすると、その日のデータが置き換わります — 他の日のデータは1か月間保持された後、自動的に削除されます。',
+    'upload.dateLabel':'日付', 'upload.dropzoneText':'Excel/CSVファイルをここにドラッグ＆ドロップ',
+    'upload.dropzoneSubtext':'または下の「ファイルを選択」を使用', 'upload.fileLabel':'Excelファイル (.xlsx / .csv)',
+    'upload.processBtn':'ファイルを処理', 'upload.clearBtn':'この日付のデータを消去'
+  },
+  es: {
+    'nav.dashboard':'Panel', 'nav.upload':'Subir', 'nav.preload':'Precarga', 'nav.forms':'Formularios ZQR',
+    'nav.scan':'Escanear', 'nav.search':'Registros', 'nav.report':'Informe', 'nav.activity':'Registro de actividad',
+    'login.brand':'IKEA — Salida de mercancías', 'login.storeTitle':'Introducir código de tienda',
+    'login.storeSubtext':'Esto configura (o abre) los propios datos de esta tienda en este dispositivo.',
+    'login.continue':'Continuar', 'login.userTitle':'Introducir código de usuario', 'login.logIn':'Iniciar sesión',
+    'login.changeStore':'Cambiar tienda', 'header.logout':'Cerrar sesión',
+    'settings.title':'Configuración', 'settings.language':'Idioma',
+    'settings.languageNote':'La navegación principal y las etiquetas clave están traducidas. La cobertura completa aún se está ampliando.',
+    'settings.appearance':'Apariencia', 'settings.light':'Claro', 'settings.dark':'Oscuro',
+    'settings.largeText':'Texto más grande', 'settings.scanVolume':'Volumen del sonido de escaneo (tránsito y entregado)',
+    'settings.alertVolume':'Volumen de alerta de ubicación incorrecta',
+    'upload.title':'Subir el archivo de pedidos de hoy',
+    'upload.subtext':'Suba la exportación de Excel de un día. Volver a subir para la misma fecha reemplaza los datos de ese día — los demás días se conservan durante 1 mes y luego se eliminan automáticamente.',
+    'upload.dateLabel':'Fecha', 'upload.dropzoneText':'Arrastre y suelte su archivo Excel/CSV aquí',
+    'upload.dropzoneSubtext':'o use "Elegir archivo" abajo', 'upload.fileLabel':'Archivo Excel (.xlsx / .csv)',
+    'upload.processBtn':'Procesar archivo', 'upload.clearBtn':'Borrar datos de esta fecha'
+  },
+  ko: {
+    'nav.dashboard':'대시보드', 'nav.upload':'업로드', 'nav.preload':'프리로드', 'nav.forms':'ZQR 양식',
+    'nav.scan':'스캔', 'nav.search':'기록', 'nav.report':'보고서', 'nav.activity':'활동 로그',
+    'login.brand':'IKEA — 상품 출고', 'login.storeTitle':'매장 코드 입력',
+    'login.storeSubtext':'이 기기에서 이 매장 자체의 데이터를 설정(또는 열기)합니다.',
+    'login.continue':'계속', 'login.userTitle':'사용자 코드 입력', 'login.logIn':'로그인',
+    'login.changeStore':'매장 변경', 'header.logout':'로그아웃',
+    'settings.title':'설정', 'settings.language':'언어',
+    'settings.languageNote':'주요 탐색 메뉴와 핵심 레이블이 번역되었습니다. 전체 번역 범위는 계속 확장되고 있습니다.',
+    'settings.appearance':'화면 모드', 'settings.light':'라이트', 'settings.dark':'다크',
+    'settings.largeText':'큰 텍스트', 'settings.scanVolume':'스캔 소리 볼륨 (이동 중 및 배송 완료)',
+    'settings.alertVolume':'잘못된 위치 경고 볼륨',
+    'upload.title':'오늘의 주문 파일 업로드',
+    'upload.subtext':'하루치 Excel 내보내기 파일을 업로드합니다. 같은 날짜에 다시 업로드하면 해당 날짜의 데이터가 교체됩니다 — 다른 날짜의 데이터는 1개월간 보관된 후 자동으로 삭제됩니다.',
+    'upload.dateLabel':'날짜', 'upload.dropzoneText':'Excel/CSV 파일을 여기로 끌어다 놓으세요',
+    'upload.dropzoneSubtext':'또는 아래의 "파일 선택"을 사용하세요', 'upload.fileLabel':'Excel 파일 (.xlsx / .csv)',
+    'upload.processBtn':'파일 처리', 'upload.clearBtn':'이 날짜의 데이터 삭제'
   }
 };
 
@@ -1447,19 +1528,42 @@ function toast(msg, ms=2400){
   clearTimeout(t._h);
   t._h = setTimeout(()=>t.classList.remove('show'), ms);
 }
-function beep(freq=880, dur=180, category='scan'){
+function beep(freq=880, dur=180, category='scan', opts){
+  opts = opts || {};
   try{
     const volumePercent = category==='alert' ? currentSettings.alertVolume : currentSettings.scanVolume;
     if(volumePercent<=0) return; // muted
+    // Quadratic taper rather than linear: human hearing perceives loudness
+    // logarithmically, so a straight linear gain scale barely sounds
+    // different across most of the slider's range. Squaring the 0-1 volume
+    // fraction spreads the perceived change out more evenly. Ceiling raised
+    // from the original fixed 0.15 to 0.5 so the difference between low and
+    // high settings is actually audible on a phone speaker.
+    const maxGain = 0.5;
+    const gainValue = maxGain * Math.pow(volumePercent/100, 2);
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type='square'; osc.frequency.value=freq;
-    gain.gain.value = 0.15 * (volumePercent/100); // 0.15 was the original fixed volume — now scaled by the stored preference
+    osc.type = opts.waveform || 'square';
+    osc.frequency.value = freq;
+    gain.gain.value = gainValue;
     osc.connect(gain); gain.connect(ctx.destination);
+    if(opts.pulseMs){
+      // Amplitude-pulses the tone on/off to produce an actual buzzing
+      // effect, rather than one continuous note.
+      const now = ctx.currentTime;
+      const period = opts.pulseMs/1000;
+      for(let t=0; t<dur/1000; t+=period){
+        gain.gain.setValueAtTime(gainValue, now+t);
+        gain.gain.setValueAtTime(0, now+t+period/2);
+      }
+    }
     osc.start();
     setTimeout(()=>{ osc.stop(); ctx.close(); }, dur);
   }catch(e){}
+  if(opts.vibrate && navigator.vibrate){
+    try{ navigator.vibrate(opts.vibrate); }catch(e){}
+  }
 }
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2607,7 +2711,17 @@ async function renderZoneAssignment(){
     return;
   }
 
-  box.innerHTML = driverNos.map(dn=>{
+  // Vans first, then trucks, then anyone with no vehicle type set yet —
+  // alphabetical by driver number within each group.
+  const vehicleRank = { 'Van':0, 'Truck':1 };
+  const displayOrder = [...driverNos].sort((a,b)=>{
+    const rankA = vehicleRank[assignedVehicle[a]] ?? 2;
+    const rankB = vehicleRank[assignedVehicle[b]] ?? 2;
+    if(rankA !== rankB) return rankA - rankB;
+    return String(a).localeCompare(String(b));
+  });
+
+  box.innerHTML = displayOrder.map(dn=>{
     const currentZone = assignedZone[dn] || '';
     const currentVehicle = assignedVehicle[dn] || '';
     const options = ZONE_OPTIONS.filter(z => z===currentZone || !usedZones.has(z));
@@ -3173,7 +3287,17 @@ async function renderPreloadZoneAssignment(){
   });
   const takenZones = new Set(Object.values(assignedZones));
 
-  box.innerHTML = driverNos.map(d=>{
+  // Vans first, then trucks, then anyone with no vehicle type set yet —
+  // alphabetical by driver number within each group.
+  const vehicleRank = { 'Van':0, 'Truck':1 };
+  const displayOrder = [...driverNos].sort((a,b)=>{
+    const rankA = vehicleRank[assignedVehicles[a]] ?? 2;
+    const rankB = vehicleRank[assignedVehicles[b]] ?? 2;
+    if(rankA !== rankB) return rankA - rankB;
+    return String(a).localeCompare(String(b));
+  });
+
+  box.innerHTML = displayOrder.map(d=>{
     const currentZone = assignedZones[d] || '';
     const currentVehicle = assignedVehicles[d] || '';
     const options = PL_ZONES.filter(z=>!takenZones.has(z) || z===currentZone)
@@ -3388,14 +3512,6 @@ async function printAllFormsPdf(date){
     if(typeof doc.autoTable !== 'function'){ toast('PDF table library did not load — check your internet connection.'); return; }
     for(let i=0;i<groups.length;i++){
       await drawZqrFormPdf(doc, date, groups[i], i>0);
-      // If the printer is set to duplex (double-sided), an odd-paged form
-      // would otherwise leave the next driver's form starting on the BACK
-      // of this driver's last sheet — two different drivers' paperwork on
-      // opposite sides of the same page. Pad with one blank page so every
-      // driver always starts on a fresh sheet.
-      if(i < groups.length-1 && doc.internal.getNumberOfPages() % 2 !== 0){
-        doc.addPage();
-      }
     }
     doc.autoPrint();
     const blobUrl = doc.output('bloburl');
@@ -4653,7 +4769,7 @@ async function handleZqrScan(raw){
       }
     })();
   }else{
-    beep(180,320,'alert');
+    beep(140, 500, 'alert', { waveform:'sawtooth', pulseMs:100, vibrate:[150,80,150,80,150] });
     stageEl.innerHTML = renderStageB('mismatch');
     setupZqrInput(); // fresh input node — needs its scan-detection listeners and focus reattached
   }
