@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.16.1b)</title>
+<title>Goods Outflow — Load-Out Control (3.18.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -445,7 +445,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.16.1b</span>
+    <span class="version-tag" id="versionTagRight">3.18.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -552,6 +552,7 @@
     <div class="card">
       <h2>Zone assignment</h2>
       <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
+      <button class="btn btn-ghost" id="autoAssignZonesBtn" style="margin-bottom:12px;">Auto-assign zones by load size</button>
       <div id="zoneAssignBox"></div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
@@ -1912,10 +1913,10 @@ async function isMasterAccessCode(code){
   return list.includes(code);
 }
 
-const MANAGER_CODES = ['M01','TL01','LL01'];
-const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03'];
+const MANAGER_CODES = ['M01','TL01','LL01','NTL01'];
+const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03','N04','N05','N06'];
 const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
-const ACTIVITY_LOG_CODES = ['M01','TL01']; // LL01 is a manager but does NOT get this page
+const ACTIVITY_LOG_CODES = ['M01','TL01','NTL01']; // LL01 is a manager but does NOT get this page
 
 async function logActivity(userCode, event){
   const raw = await storeGet(storeKey('activityLog'));
@@ -2122,7 +2123,7 @@ async function renderActivityLog(){
 }
 document.getElementById('activityDate').addEventListener('change', renderActivityLog);
 
-const N_CODE_EXTRA_ACCESS_VIEWS = ['forms','preload']; // N01-N03 get these on top of the usual co-worker access; CW01-CW10 do not
+const N_CODE_EXTRA_ACCESS_VIEWS = ['forms','preload']; // EMPU codes (N_CODES) get these on top of the usual co-worker access; CW01-CW10 do not
 
 function applyRoleUI(role){
   document.querySelectorAll('nav.tabs button[data-view]').forEach(btn=>{
@@ -2501,7 +2502,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     const cols = detectColumns(headerRow);
     const missing = ['orderNo','driverNo','suburb','items'].filter(f=>cols[f]===undefined);
     if(missing.length){
-      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Check the file headers.';
+      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Probably headers have been changed — make sure there are these header names: OrderNo, DriverNo, Suburb, Items, Zone.';
       return;
     }
 
@@ -2689,13 +2690,18 @@ async function renderZoneAssignment(){
   const driverNos = getAssignableDriverList(day);
   const assignedZone = {}; // driverNo -> zone
   const assignedVehicle = {}; // driverNo -> 'Van'|'Truck'
+  const driverAutoAssigned = {}; // driverNo -> true if its zone was set by auto-assign, not manually
+  const itemTotals = {}; // driverNo -> total items across their orders
   day.records.forEach(r=>{
     if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone;
     if(r.vehicleType && !assignedVehicle[r.driverNo]) assignedVehicle[r.driverNo] = r.vehicleType;
+    if(r.zoneAutoAssigned) driverAutoAssigned[r.driverNo] = true;
+    itemTotals[r.driverNo] = (itemTotals[r.driverNo]||0) + (Number(r.items)||0);
   });
   (day.manualDrivers||[]).forEach(m=>{
     if(m.zone && !assignedZone[m.driverNo]) assignedZone[m.driverNo] = m.zone;
     if(m.vehicleType && !assignedVehicle[m.driverNo]) assignedVehicle[m.driverNo] = m.vehicleType;
+    if(m.zoneAutoAssigned) driverAutoAssigned[m.driverNo] = true;
   });
   const usedZones = new Set(Object.values(assignedZone));
   // Only a manual-only driver (no real order yet) can be deleted here — one
@@ -2728,8 +2734,10 @@ async function renderZoneAssignment(){
     const deleteBtn = manualOnlyNos.has(dn)
       ? '<button class="zone-assign-delete" data-driver="'+escapeHtml(dn)+'" title="Remove driver">✕</button>'
       : '';
+    const itemCount = itemTotals[dn] || 0;
+    const autoTag = (currentZone && driverAutoAssigned[dn]) ? ' <span class="subtext" style="margin:0; font-weight:600;">(auto)</span>' : '';
     return '<div class="zone-assign-row">'
-      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+'</span>'
+      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+' <span class="subtext" style="margin:0;">· '+itemCount+' items</span>'+autoTag+'</span>'
       + '<div class="vehicle-toggle" data-driver="'+escapeHtml(dn)+'">'
       + '<button data-vehicle="Van" class="'+(currentVehicle==='Van'?'active':'')+'">Van</button>'
       + '<button data-vehicle="Truck" class="'+(currentVehicle==='Truck'?'active':'')+'">Truck</button>'
@@ -2768,11 +2776,11 @@ async function onZoneAssignChange(e){
   const date = document.getElementById('uploadDate').value || todayISO();
   const ok = await updateDayAtomic(date, (day)=>{
     let touched = false;
-    day.records.forEach(r=>{ if(r.driverNo===driverNo){ r.zone = zone; touched = true; } });
+    day.records.forEach(r=>{ if(r.driverNo===driverNo){ r.zone = zone; r.zoneAutoAssigned = false; touched = true; } });
     if(!touched){
       day.manualDrivers = day.manualDrivers || [];
       const entry = day.manualDrivers.find(m=>m.driverNo===driverNo);
-      if(entry) entry.zone = zone;
+      if(entry){ entry.zone = zone; entry.zoneAutoAssigned = false; }
     }
     // External Returns are excluded from the main upload dataset and never go
     // through zone assignment on their own — the same driver's zone applies
@@ -2790,6 +2798,95 @@ async function onZoneAssignChange(e){
   if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 }
+
+// Pure, side-effect-free algorithm: given each driver's total item count and
+// vehicle type, returns the zone each should get. Trucks are assigned first
+// (highest items to lowest) from A, B, C, D, then 7, 6, 5 if there are more
+// than 4 trucks. Vans are assigned next (highest items to lowest) from 1, 2,
+// 4, 5, 6, 7 — skipping 3 as specified — minus whatever zones trucks already
+// claimed, since trucks take priority when the two pools overlap (5, 6, 7).
+// A driver with no vehicle type set isn't in either pool and is left out.
+function computeAutoZoneAssignment(itemTotals, vehicleTypes){
+  const TRUCK_ZONE_POOL = ['A','B','C','D','7','6','5'];
+  const VAN_ZONE_POOL = ['1','2','4','5','6','7'];
+  const byItemsDesc = (a,b)=>{
+    const diff = (itemTotals[b]||0) - (itemTotals[a]||0);
+    return diff !== 0 ? diff : String(a).localeCompare(String(b)); // deterministic tie-break
+  };
+  const trucks = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Truck').sort(byItemsDesc);
+  const vans = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Van').sort(byItemsDesc);
+
+  const assignment = {};
+  const usedZones = new Set();
+  const unassignable = [];
+
+  trucks.forEach((dn,i)=>{
+    if(i < TRUCK_ZONE_POOL.length){ assignment[dn] = TRUCK_ZONE_POOL[i]; usedZones.add(TRUCK_ZONE_POOL[i]); }
+    else unassignable.push(dn);
+  });
+  const availableVanZones = VAN_ZONE_POOL.filter(z=>!usedZones.has(z));
+  vans.forEach((dn,i)=>{
+    if(i < availableVanZones.length){ assignment[dn] = availableVanZones[i]; usedZones.add(availableVanZones[i]); }
+    else unassignable.push(dn);
+  });
+
+  return { assignment, unassignable };
+}
+
+document.getElementById('autoAssignZonesBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('uploadDate').value || todayISO();
+  const day = await loadDay(date);
+  if(!day){ toast('No data uploaded for '+date+'.'); return; }
+
+  const itemTotals = {};
+  const vehicleTypes = {};
+  day.records.forEach(r=>{
+    itemTotals[r.driverNo] = (itemTotals[r.driverNo]||0) + (Number(r.items)||0);
+    if(r.vehicleType && !vehicleTypes[r.driverNo]) vehicleTypes[r.driverNo] = r.vehicleType;
+  });
+  (day.manualDrivers||[]).forEach(m=>{
+    if(m.vehicleType && !vehicleTypes[m.driverNo]) vehicleTypes[m.driverNo] = m.vehicleType;
+  });
+
+  const driversWithVehicle = Object.keys(vehicleTypes);
+  if(!driversWithVehicle.length){
+    toast('No drivers have a Van/Truck vehicle type set yet — set that first for each driver.');
+    return;
+  }
+
+  const { assignment, unassignable } = computeAutoZoneAssignment(itemTotals, vehicleTypes);
+  const truckCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Truck').length;
+  const vanCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Van').length;
+
+  const proceed = await confirmDialog(
+    'Auto-assign zones by load size',
+    '<div>This will assign zones for <b>'+truckCount+' truck(s)</b> and <b>'+vanCount+' van(s)</b> based on their total item count — highest first. '
+      + 'Trucks get priority for zones 5, 6 and 7 where the two pools overlap.</div>'
+      + '<div style="margin-top:10px;"><b>Any existing zone already assigned to a truck or van driver will be overwritten.</b></div>'
+      + (unassignable.length ? '<div style="margin-top:10px; color:var(--warning); font-weight:600;">'+unassignable.length+' driver(s) won\u2019t get a zone — there aren\u2019t enough left in the pool ('+unassignable.join(', ')+').</div>' : '')
+  );
+  if(!proceed) return;
+
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    freshDay.records.forEach(r=>{
+      if(assignment[r.driverNo]){ r.zone = assignment[r.driverNo]; r.zoneAutoAssigned = true; }
+    });
+    (freshDay.manualDrivers||[]).forEach(m=>{
+      if(assignment[m.driverNo]){ m.zone = assignment[m.driverNo]; m.zoneAutoAssigned = true; }
+    });
+    (freshDay.externalReturns||[]).forEach(r=>{
+      if(assignment[r.driverNo]) r.zone = assignment[r.driverNo];
+    });
+  });
+  if(!ok) return;
+
+  toast('Zones auto-assigned for '+Object.keys(assignment).length+' driver(s).');
+  await renderZoneAssignment();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+});
 
 async function onVehicleTypeChange(e){
   const wrap = e.target.closest('.vehicle-toggle');
@@ -3211,7 +3308,7 @@ document.getElementById('preloadProcessBtn').addEventListener('click', async ()=
     const cols = detectColumns(headerRow);
     const missing = ['orderNo','driverNo','suburb','items'].filter(f=>cols[f]===undefined);
     if(missing.length){
-      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Check the file headers.';
+      statusEl.innerHTML = 'Could not find column(s): <b>'+missing.join(', ')+'</b>. Probably headers have been changed — make sure there are these header names: OrderNo, DriverNo, Suburb, Items, Zone.';
       return;
     }
 
@@ -4605,6 +4702,13 @@ async function handleOrderScan(raw){
 
   toast('Order '+lookupCode+' not found');
   beep(220,220,'alert');
+  const stageA = document.getElementById('stageA');
+  stageA.style.display = 'block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div class="scan-result-big" style="color:var(--danger);">ORDER NOT FOUND</div>'
+    + '<div class="subtext" style="margin-bottom:0;">Order <b class="mono">'+escapeHtml(lookupCode)+'</b> is not in today\u2019s upload.</div>'
+    + '<div class="subtext" style="margin-top:10px; margin-bottom:0;">Probably not manifested, wrong date on Freight Note, Check CPS/ISELL.</div>'
+    + '</div>';
 }
 
 function formatDDMM(dateStr){
@@ -4871,15 +4975,15 @@ document.getElementById('recordsDate').addEventListener('change', ()=>{
   if(searchHasRun) runSearch();
 });
 
-const N_CODES = ['N01','N02','N03'];
+const N_CODES = ['N01','N02','N03','N04','N05','N06','NTL01'];
 function scannerOfRecord(r){
   return r.completedBy || r.scannedBy || null;
 }
 function isEmpuConnectOrder(record){
-  // Any order scanned/delivered by N01, N02, or N03 is an EMPU Connect order —
-  // duplicate order numbers between an N-code user and anyone else are expected
-  // and allowed, so being an N-code order is itself sufficient, with no need to
-  // verify a matching duplicate exists elsewhere.
+  // Any order scanned/delivered by an EMPU code (N_CODES) is an EMPU Connect
+  // order — duplicate order numbers between an N-code user and anyone else
+  // are expected and allowed, so being an N-code order is itself sufficient,
+  // with no need to verify a matching duplicate exists elsewhere.
   return N_CODES.includes(scannerOfRecord(record));
 }
 
