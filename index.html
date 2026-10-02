@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.19.1b)</title>
+<title>Goods Outflow — Load-Out Control (3.21.1b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -426,7 +426,7 @@
     <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line); text-align:left;">
       <div class="subtext" style="margin-bottom:8px;">Create a master access code — manager-level access that works for any store, for your own use when troubleshooting.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input type="text" id="adminMasterCodeInput" value="VJ01" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <input type="text" id="adminMasterCodeInput" placeholder="e.g. VJ02" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
         <button class="btn btn-primary" id="adminCreateMasterBtn">Create master access</button>
       </div>
       <div id="adminMasterStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
@@ -445,7 +445,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.19.1b</span>
+    <span class="version-tag" id="versionTagRight">3.21.1b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -501,6 +501,11 @@
           <div class="dash-stat-num" id="dashPreloadedNum">0</div>
           <div class="dash-stat-label">Preloaded</div>
           <div class="dash-stat-sub">Already handled the day before</div>
+        </div>
+        <div class="dash-stat" id="dashEmpuCard" style="display:none;">
+          <div class="dash-stat-num" id="dashEmpuNum">0</div>
+          <div class="dash-stat-label">EMPU Delivered</div>
+          <div class="dash-stat-sub">EMPU-Connect + EMPU Orders</div>
         </div>
       </div>
       <div id="dashChart" style="margin-top:20px;"></div>
@@ -1725,6 +1730,14 @@ async function refreshDashboard(){
   const preloadedCount = dashRecords.filter(r=>r.preloaded).length;
   document.getElementById('dashPreloadedNum').textContent = preloadedCount;
   document.getElementById('dashPreloadedCard').style.display = preloadedCount ? '' : 'none';
+
+  // EMPU-Connect and EMPU Orders are mutually exclusive and together cover
+  // every EMPU-scanned record, so their combined "live" delivered count is
+  // simply every delivered record scanned by an EMPU code.
+  const empuDeliveredCount = dashRecords.filter(r=>r.status==='delivered' && isEmpuRecord(r)).length;
+  document.getElementById('dashEmpuNum').textContent = empuDeliveredCount;
+  document.getElementById('dashEmpuCard').style.display = empuDeliveredCount ? '' : 'none';
+
   document.getElementById('dashEmpty').style.display = total ? 'none' : 'block';
 
   const timesEl = document.getElementById('dashDeliveryTimes');
@@ -1919,10 +1932,10 @@ async function isMasterAccessCode(code){
   return list.includes(code);
 }
 
-const MANAGER_CODES = ['M01','TL01','LL01','NTL01'];
+const MANAGER_CODES = ['M01','TL01','LL01','NTL01','VJ01'];
 const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03','N04','N05','N06'];
 const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
-const ACTIVITY_LOG_CODES = ['M01','TL01','NTL01']; // LL01 is a manager but does NOT get this page
+const ACTIVITY_LOG_CODES = ['M01','TL01','NTL01','VJ01']; // LL01 is a manager but does NOT get this page
 
 async function logActivity(userCode, event){
   const raw = await storeGet(storeKey('activityLog'));
@@ -4617,7 +4630,19 @@ document.getElementById('resetScanBtn').addEventListener('click', async ()=>{
     renderScanStages();
     await updatePreloadOrdersAtomic(toRevert.date, (arr)=>{
       const rec = arr.find(r=>r.id===toRevert.recId && r.status!=='delivered');
-      if(rec){ rec.status='pending'; delete rec.inTransitAt; delete rec.scannedBy; }
+      if(rec){
+        rec.status='pending'; delete rec.inTransitAt; delete rec.scannedBy;
+        if(rec.transitScanCount) rec.transitScanCount = Math.max(0, rec.transitScanCount - 1);
+      }
+    });
+  }else if(currentScanOrder){
+    const toRevert = currentScanOrder;
+    currentScanOrder = null;
+    await clearInProgressScan();
+    renderScanStages();
+    await updateDayAtomic(toRevert.date, (freshDay)=>{
+      const freshRec = freshDay.records.find(r=>r.id===toRevert.recId);
+      if(freshRec && freshRec.transitScanCount) freshRec.transitScanCount = Math.max(0, freshRec.transitScanCount - 1);
     });
   }else{
     currentScanOrder = null;
@@ -4929,11 +4954,14 @@ async function handleZqrScan(raw){
       const recId = savedOrder.recId;
       const completedBy = currentUserCode;
       const nowIso = new Date().toISOString();
+      const isEmpuScan = N_CODES.includes(completedBy);
       if(savedOrder.isPreload){
         await updatePreloadOrdersAtomic(savedOrder.date, (arr)=>{
           const rec = arr.find(r=>r.id===recId);
           if(rec){
             rec.deliveredScanCount = (rec.deliveredScanCount||0) + 1;
+            if(isEmpuScan) rec.empuTrolleyCount = (rec.empuTrolleyCount||0) + 1;
+            else rec.storeTrolleyCount = (rec.storeTrolleyCount||0) + 1;
             if(!rec.firstDeliveredAt) rec.firstDeliveredAt = nowIso; // preserved for stats even if delivered again later
             rec.status='delivered'; rec.deliveredAt = nowIso; rec.completedBy = completedBy;
           }
@@ -4943,6 +4971,8 @@ async function handleZqrScan(raw){
           const freshRec = freshDay.records.find(r=>r.id===recId);
           if(freshRec){
             freshRec.deliveredScanCount = (freshRec.deliveredScanCount||0) + 1;
+            if(isEmpuScan) freshRec.empuTrolleyCount = (freshRec.empuTrolleyCount||0) + 1;
+            else freshRec.storeTrolleyCount = (freshRec.storeTrolleyCount||0) + 1;
             if(!freshRec.firstDeliveredAt) freshRec.firstDeliveredAt = nowIso;
             freshRec.status = 'delivered';
             freshRec.deliveredAt = nowIso;
@@ -5059,12 +5089,39 @@ const N_CODES = ['N01','N02','N03','N04','N05','N06','NTL01'];
 function scannerOfRecord(r){
   return r.completedBy || r.scannedBy || null;
 }
-function isEmpuConnectOrder(record){
-  // Any order scanned/delivered by an EMPU code (N_CODES) is an EMPU Connect
-  // order — duplicate order numbers between an N-code user and anyone else
-  // are expected and allowed, so being an N-code order is itself sufficient,
-  // with no need to verify a matching duplicate exists elsewhere.
-  return N_CODES.includes(scannerOfRecord(record));
+function isEmpuRecord(record){
+  // EMPU is considered involved if EITHER the record is currently attributed
+  // to an EMPU code, OR the trolley breakdown shows at least one EMPU
+  // delivery scan happened at some point — the latter catches an order EMPU
+  // delivered that a store scan then delivered again afterward, which would
+  // otherwise overwrite completedBy back to a non-EMPU code and hide EMPU's
+  // involvement entirely.
+  return N_CODES.includes(scannerOfRecord(record)) || (record.empuTrolleyCount||0) > 0;
+}
+// EMPU-Connect: an EMPU record that shows evidence of a second pair of
+// hands. Checked in order of reliability:
+//  1) The trolley breakdown directly shows both a store and an EMPU
+//     delivery scan — the clearest possible evidence, independent of which
+//     one happened most recently.
+//  2) scannedBy (whoever did the ORIGINAL pending-to-in-transit scan) is set
+//     once, permanently, and never overwritten by any later re-scan — so if
+//     it's a non-EMPU code while the record is now EMPU-attributed, the
+//     store picked it up first and EMPU completed it. This works even for
+//     orders first touched long before EMPU was involved, since scannedBy
+//     has existed since the app's original design.
+//  3) transitScanCount/deliveredScanCount climbing past 1, for the case
+//     where both the original and later scans happened after that tracking
+//     began (added in 3.19.0b) — it has no visibility into scans from
+//     before then, which is why signals 1 and 2 are needed as well, not
+//     instead.
+// An EMPU record with none of these signals has no evidence of a separate
+// store touch, and is simply an "order".
+function isEmpuConnectRecord(record){
+  if(!isEmpuRecord(record)) return false;
+  const bothTrolleyTypes = (record.storeTrolleyCount||0) > 0 && (record.empuTrolleyCount||0) > 0;
+  const handoff = record.scannedBy && !N_CODES.includes(record.scannedBy);
+  const multiScanned = (record.transitScanCount||0) > 1 || (record.deliveredScanCount||0) > 1;
+  return bothTrolleyTypes || !!handoff || multiScanned;
 }
 
 async function liveOrderLookup(){
@@ -5095,10 +5152,14 @@ async function liveOrderLookup(){
   matches.sort((a,b)=> b.date.localeCompare(a.date)); // most recent first
 
   resultEl.innerHTML = matches.map(found=>{
-    const empuConnect = isEmpuConnectOrder(found);
+    const empu = isEmpuRecord(found);
+    const empuConnect = isEmpuConnectRecord(found);
+    const trolleyCount = found.deliveredScanCount||0;
+    const storeTrolleys = found.storeTrolleyCount||0;
+    const empuTrolleys = found.empuTrolleyCount||0;
     return '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
-      + (empuConnect ? ' <span class="badge empu-connect">EMPU Connect</span>' : '')
+      + (empu ? ' <span class="badge empu-connect">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
       + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
       + (found.manuallyAdded ? ' <span class="badge" style="background:var(--danger); color:#fff;">Not in manifest</span>' : '')
       + '</div>'
@@ -5107,8 +5168,11 @@ async function liveOrderLookup(){
       + '<span>Zone <b class="mono">'+escapeHtml(found.zone)+'</b></span>'
       + '<span>Suburb <b>'+escapeHtml(found.suburb)+'</b></span>'
       + '<span>Items <b>'+found.items+'</b></span>'
+      + (trolleyCount ? '<span>No of trolleys <b>'+trolleyCount+'</b></span>' : '')
       + '<span><span class="badge '+found.status+'">'+found.status+'</span></span>'
-      + '</div></div>';
+      + '</div>'
+      + (trolleyCount ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Store trolley no <b>'+storeTrolleys+'</b> · EMPU trolley no <b>'+empuTrolleys+'</b></div>' : '')
+      + '</div>';
   }).join('');
 }
 
@@ -5155,7 +5219,7 @@ async function runSearch(){
       if(driver && !r.driverNo.toLowerCase().includes(driver)) return;
       if(zone && r.zone.trim().toLowerCase() !== zone) return;
       if(statusFilter==='empu'){
-        if(!isEmpuConnectOrder(r)) return;
+        if(!isEmpuRecord(r)) return;
       }else if(statusFilter && r.status !== statusFilter){
         return;
       }
@@ -5173,9 +5237,21 @@ async function runSearch(){
   resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver</th>'+(showZone?'<th>Zone</th>':'')+'<th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
     + results.map(r=>{
       const preloadBadge = r.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(r.preloadedOn||'')+'</span>' : '';
+      // Shown beside Status for every EMPU record, whichever status filter
+      // is active (not just the EMPU filter itself) — Connect when it was
+      // scanned more than once at either stage (meaning someone else, i.e.
+      // the store, scanned it before EMPU did), "order" when EMPU's own scan
+      // is the only one on record, so the two are always told apart at a
+      // glance.
+      let empuLabel = '';
+      if(isEmpuRecord(r)){
+        empuLabel = isEmpuConnectRecord(r)
+          ? ' <span class="badge empu-connect">Connect</span>'
+          : ' <span class="badge empu-connect">order</span>';
+      }
       return '<tr><td class="mono">'+escapeHtml(r.orderNo)+preloadBadge+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
       +(showZone?'<td>'+escapeHtml(r.zone)+'</td>':'')+'<td>'+escapeHtml(r.suburb)+'</td><td>'+r.items+'</td>'
-      +'<td><span class="badge '+r.status+'">'+r.status+'</span></td></tr>';
+      +'<td><span class="badge '+r.status+'">'+r.status+'</span>'+empuLabel+'</td></tr>';
     }).join('')
     + '</tbody></table>';
   resultsEl.dataset.hasResults = '1';
@@ -5358,7 +5434,7 @@ async function computeReportData(date){
     const key = r.driverNo;
     if(!driverMap[key]) driverMap[key] = { driverNo:r.driverNo, zone:r.zone, vehicleType:driverVehicleMap[r.driverNo]||'', empuCount:0, orderCount:0, preloadedDriverNo:'' };
     driverMap[key].orderCount++;
-    if(r.isNetley || isEmpuConnectOrder(r)) driverMap[key].empuCount++;
+    if(r.isNetley || isEmpuRecord(r)) driverMap[key].empuCount++;
     if(r.preloaded && r.preloadedDriverNo && r.preloadedDriverNo!==r.driverNo && !driverMap[key].preloadedDriverNo){
       driverMap[key].preloadedDriverNo = r.preloadedDriverNo;
     }
@@ -5376,7 +5452,7 @@ async function computeReportData(date){
     .map(p=>({ zone:p.zone, driverNo:[...p.drivers].join(', '), orderCount:p.orderCount }))
     .sort((a,b)=> String(a.zone).localeCompare(String(b.zone)));
 
-  const empuOrdersCombined = records.filter(r=>r.status==='delivered' && (r.isNetley || isEmpuConnectOrder(r)));
+  const empuOrdersCombined = records.filter(r=>r.status==='delivered' && (r.isNetley || isEmpuRecord(r)));
 
   return {
     manual,
