@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.21.1b)</title>
+<title>Goods Outflow — Load-Out Control (3.22.2b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -445,7 +445,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.21.1b</span>
+    <span class="version-tag" id="versionTagRight">3.22.2b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -1581,6 +1581,13 @@ function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
+function extract8DigitRef(raw){
+  // The uploaded Customer Reference Number column may carry extra text
+  // around the actual reference — pull out a standalone run of exactly 8
+  // digits (not part of a longer number) rather than the raw cell value.
+  const m = String(raw||'').match(/(?<!\d)\d{8}(?!\d)/);
+  return m ? m[0] : '';
+}
 
 /* Header normalization for flexible Excel column matching */
 function normHeader(h){
@@ -1589,6 +1596,7 @@ function normHeader(h){
 const HEADER_ALIASES = {
   category: ['category','cat'],
   orderNo: ['orderno','orderno','order#','ordernumber','order','ordernum','ref3','reference3','referenceno3','ref','customerreferenceno2','customerreference2','customerreferenceno','customerreference'],
+  customerRef: ['customerreferenceno','customerreference','customerreferenceno2','customerreference2','custref','crn','customerrefno','customerreferencenumber'],
   driverNo: ['driverno','driver#','drivernumber','driver','drivernum','scheduledrider'],
   driverName: ['drivername','drivernamefull'],
   zone: ['zone','zonebay','bay','zonebayno'],
@@ -1618,6 +1626,18 @@ function detectColumns(headerRow){
   headerRow.forEach((h, idx)=>{
     const n = normHeader(h);
     if(n==='itemno' || n==='itemnos' || n==='itemnumber' || n==='itemnum'){ map.items = idx; }
+  });
+  // Priority tier for orderNo: when a sheet has BOTH a Customer Reference
+  // Number column and a genuine Order No column, the Customer Reference
+  // column (often sitting earlier in the sheet) would otherwise claim the
+  // orderNo field first since it shares aliases with it. An explicit,
+  // unambiguous Order No column always wins when one exists — Customer
+  // Reference is for disambiguating duplicate order numbers (see
+  // customerRef above), not for identifying the order itself.
+  const EXPLICIT_ORDERNO_ALIASES = ['orderno','order#','ordernumber','order','ordernum'];
+  headerRow.forEach((h, idx)=>{
+    const n = normHeader(h);
+    if(EXPLICIT_ORDERNO_ALIASES.includes(n)) map.orderNo = idx;
   });
   return map;
 }
@@ -1760,7 +1780,7 @@ async function refreshDashboard(){
   }).join('');
 
   const deliveredTimes = dashRecords
-    .filter(r=>r.status==='delivered' && r.deliveredAt)
+    .filter(r=>r.status==='delivered' && r.deliveredAt && !r.preloaded)
     .map(r=>r.deliveredAt)
     .sort();
   if(deliveredTimes.length){
@@ -2607,6 +2627,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         id: uid(),
         category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
         orderNo,
+        customerRef: cols.customerRef!==undefined ? String(r[cols.customerRef]||'').trim() : '',
         driverNo: String(r[cols.driverNo]||'').trim(),
         driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
         zone: cols.zone!==undefined ? String(r[cols.zone]||'').trim() : '',
@@ -2641,7 +2662,9 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
       // Skip exact duplicates — every source column value must match another
       // already-seen row for it to be dropped (not just a repeated order no.).
-      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
+      // customerRef is included so two rows sharing an order number but with
+      // a different customer reference are never treated as the same row.
+      const signature = [rec.category, rec.orderNo, rec.customerRef, rec.driverNo, rec.driverName, rec.zone, rec.suburb, rec.items, rec.details].join('␟');
       if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
       seenSignatures.add(signature);
 
@@ -3397,6 +3420,7 @@ document.getElementById('preloadProcessBtn').addEventListener('click', async ()=
         id: uid(),
         category: cols.category!==undefined ? String(r[cols.category]||'').trim() : '',
         orderNo,
+        customerRef: cols.customerRef!==undefined ? String(r[cols.customerRef]||'').trim() : '',
         driverNo: String(r[cols.driverNo]||'').trim(),
         driverName: cols.driverName!==undefined ? String(r[cols.driverName]||'').trim() : '',
         zone: '',
@@ -3406,7 +3430,7 @@ document.getElementById('preloadProcessBtn').addEventListener('click', async ()=
         isNetley: /fullserve/i.test(details),
         status: 'pending'
       };
-      const signature = [rec.category, rec.orderNo, rec.driverNo, rec.driverName, rec.suburb, rec.items, rec.details].join('␟');
+      const signature = [rec.category, rec.orderNo, rec.customerRef, rec.driverNo, rec.driverName, rec.suburb, rec.items, rec.details].join('␟');
       if(seenSignatures.has(signature)){ duplicatesSkipped++; continue; }
       seenSignatures.add(signature);
       records.push(rec);
@@ -4728,6 +4752,67 @@ async function findPriorDeliveryDate(orderNo, beforeDate){
 
 let pendingRebook = null; // {orderNo, date, rec, priorDate} while awaiting Yes/No
 
+function commitOrderScanMatch(date, rec){
+  // Found in today's own upload — proceed normally. No rebook question here,
+  // even if this same order number happens to have been delivered before;
+  // today's upload already settles what should happen with it today.
+  currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
+                        category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
+  renderScanStages();
+  const recId = rec.id;
+  if(rec.status==='pending'){
+    beep(660,120,'scan'); // transit sound — distinct from delivered (higher, longer) and errors (lower)
+    const scannedBy = currentUserCode;
+    updateDayAtomic(date, (freshDay)=>{
+      const freshRec = freshDay.records.find(r=>r.id===recId);
+      if(freshRec){
+        // Counted regardless of status, so a re-scan of an order already
+        // past pending is still tracked — for statistics only, this never
+        // changes the order's actual status/timestamp below.
+        freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1;
+        if(freshRec.status==='pending'){
+          freshRec.status = 'in-transit';
+          freshRec.inTransitAt = new Date().toISOString();
+          freshRec.scannedBy = scannedBy;
+        }
+      }
+    });
+  }else{
+    // Already past pending — status/timestamp are deliberately left
+    // untouched (existing behaviour), but the re-scan itself is still
+    // counted for statistics.
+    updateDayAtomic(date, (freshDay)=>{
+      const freshRec = freshDay.records.find(r=>r.id===recId);
+      if(freshRec) freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1;
+    });
+  }
+  saveInProgressScan();
+}
+
+function renderOrderDisambiguation(date, lookupCode, matches){
+  // Two (or more) separate orders can legitimately share the same order
+  // number — the Customer Reference Number column is what tells them apart.
+  // Rather than silently acting on whichever one happens to be found first,
+  // the worker is asked to confirm which one this physical item actually is.
+  const stageA = document.getElementById('stageA');
+  stageA.style.display = 'block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div class="scan-result-big" style="color:var(--ink); font-size:22px;">Which order is this?</div>'
+    + '<div class="subtext" style="margin-bottom:12px;">Order <b class="mono">'+escapeHtml(lookupCode)+'</b> matches '+matches.length+' separate orders today — select by Customer Reference Number.</div>'
+    + matches.map((m, i)=>(
+        '<button class="btn btn-ghost" data-disambiguate-idx="'+i+'" style="display:block; width:100%; text-align:left; margin-bottom:8px; padding:10px 14px;">'
+        + '<b>Ref '+escapeHtml(m.customerRef || '(none)')+'</b> · '+escapeHtml(m.suburb)+' · Driver '+escapeHtml(m.driverNo)+' · '+m.items+' items'
+        + '</button>'
+      )).join('')
+    + '</div>';
+  stageA.querySelectorAll('[data-disambiguate-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const chosen = matches[Number(btn.dataset.disambiguateIdx)];
+      commitOrderScanMatch(date, chosen);
+    });
+  });
+}
+
 async function handleOrderScan(raw){
   if(scanMode==='preload'){
     await handlePreloadOrderScanUnified(raw);
@@ -4737,43 +4822,16 @@ async function handleOrderScan(raw){
   const lookupCode = extractOrderNoFromScan(parsed.orderNo);
   let date = parsed.date || document.getElementById('formsDate').value || todayISO();
   let day = await loadDay(date);
-  let rec = day ? day.records.find(r=>r.orderNo===lookupCode) : null;
+  let matches = day ? day.records.filter(r=>r.orderNo===lookupCode) : [];
+
+  if(matches.length > 1){
+    renderOrderDisambiguation(date, lookupCode, matches);
+    return;
+  }
+  let rec = matches[0];
 
   if(rec){
-    // Found in today's own upload — proceed normally. No rebook question here,
-    // even if this same order number happens to have been delivered before;
-    // today's upload already settles what should happen with it today.
-    currentScanOrder = { date, orderNo: rec.orderNo, zone: rec.zone, driverNo: rec.driverNo,
-                          category: rec.category, suburb: rec.suburb, items: rec.items, recId: rec.id };
-    renderScanStages();
-    const recId = rec.id;
-    if(rec.status==='pending'){
-      beep(660,120,'scan'); // transit sound — distinct from delivered (higher, longer) and errors (lower)
-      const scannedBy = currentUserCode;
-      updateDayAtomic(date, (freshDay)=>{
-        const freshRec = freshDay.records.find(r=>r.id===recId);
-        if(freshRec){
-          // Counted regardless of status, so a re-scan of an order already
-          // past pending is still tracked — for statistics only, this never
-          // changes the order's actual status/timestamp below.
-          freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1;
-          if(freshRec.status==='pending'){
-            freshRec.status = 'in-transit';
-            freshRec.inTransitAt = new Date().toISOString();
-            freshRec.scannedBy = scannedBy;
-          }
-        }
-      });
-    }else{
-      // Already past pending — status/timestamp are deliberately left
-      // untouched (existing behaviour), but the re-scan itself is still
-      // counted for statistics.
-      updateDayAtomic(date, (freshDay)=>{
-        const freshRec = freshDay.records.find(r=>r.id===recId);
-        if(freshRec) freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1;
-      });
-    }
-    saveInProgressScan();
+    commitOrderScanMatch(date, rec);
     return;
   }
 
@@ -4891,16 +4949,7 @@ function renderManualDriverFallback(orderNo, date){
   });
 }
 
-async function handlePreloadOrderScanUnified(raw){
-  const date = document.getElementById('scanPreloadDate').value || todayISO();
-  const lookupCode = extractOrderNoFromScan(raw.trim());
-  const orders = await loadPreloadOrders(date);
-  const rec = orders.find(r=>r.orderNo===lookupCode);
-  if(!rec){
-    toast('Preload order '+lookupCode+' not found for '+date+'.');
-    beep(220,220,'alert');
-    return;
-  }
+function commitPreloadScanMatch(date, rec){
   if(!rec.zone){
     toast('Driver '+rec.driverNo+' has no PL zone assigned yet — assign one on the Preload page first.');
     beep(220,220,'alert');
@@ -4930,6 +4979,45 @@ async function handlePreloadOrderScanUnified(raw){
       if(freshRec) freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1;
     });
   }
+}
+
+function renderPreloadOrderDisambiguation(date, lookupCode, matches){
+  const stageA = document.getElementById('stageA');
+  stageA.style.display = 'block';
+  stageA.innerHTML = '<div style="text-align:left;">'
+    + '<div class="scan-result-big" style="color:var(--ink); font-size:22px;">Which order is this?</div>'
+    + '<div class="subtext" style="margin-bottom:12px;">Order <b class="mono">'+escapeHtml(lookupCode)+'</b> matches '+matches.length+' separate orders today — select by Customer Reference Number.</div>'
+    + matches.map((m, i)=>(
+        '<button class="btn btn-ghost" data-disambiguate-idx="'+i+'" style="display:block; width:100%; text-align:left; margin-bottom:8px; padding:10px 14px;">'
+        + '<b>Ref '+escapeHtml(m.customerRef || '(none)')+'</b> · '+escapeHtml(m.suburb)+' · Driver '+escapeHtml(m.driverNo)+' · '+m.items+' items'
+        + '</button>'
+      )).join('')
+    + '</div>';
+  stageA.querySelectorAll('[data-disambiguate-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const chosen = matches[Number(btn.dataset.disambiguateIdx)];
+      commitPreloadScanMatch(date, chosen);
+    });
+  });
+}
+
+async function handlePreloadOrderScanUnified(raw){
+  const date = document.getElementById('scanPreloadDate').value || todayISO();
+  const lookupCode = extractOrderNoFromScan(raw.trim());
+  const orders = await loadPreloadOrders(date);
+  const matches = orders.filter(r=>r.orderNo===lookupCode);
+
+  if(matches.length > 1){
+    renderPreloadOrderDisambiguation(date, lookupCode, matches);
+    return;
+  }
+  const rec = matches[0];
+  if(!rec){
+    toast('Preload order '+lookupCode+' not found for '+date+'.');
+    beep(220,220,'alert');
+    return;
+  }
+  commitPreloadScanMatch(date, rec);
 }
 
 async function handleZqrScan(raw){
@@ -5141,8 +5229,8 @@ async function liveOrderLookup(){
 
   const matches = [];
   days.forEach((day, i)=>{
-    const found = day ? day.records.find(r=>r.orderNo===val) : null;
-    if(found) matches.push(Object.assign({}, found, {date: dates[i]}));
+    const found = day ? day.records.filter(r=>r.orderNo===val) : [];
+    found.forEach(f => matches.push(Object.assign({}, f, {date: dates[i]})));
   });
 
   if(!matches.length){
@@ -5151,17 +5239,20 @@ async function liveOrderLookup(){
   }
   matches.sort((a,b)=> b.date.localeCompare(a.date)); // most recent first
 
+  const multipleMatches = matches.length > 1;
   resultEl.innerHTML = matches.map(found=>{
     const empu = isEmpuRecord(found);
     const empuConnect = isEmpuConnectRecord(found);
     const trolleyCount = found.deliveredScanCount||0;
     const storeTrolleys = found.storeTrolleyCount||0;
     const empuTrolleys = found.empuTrolleyCount||0;
+    const refNo = multipleMatches ? extract8DigitRef(found.customerRef) : '';
     return '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
       + (empu ? ' <span class="badge empu-connect">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
       + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
       + (found.manuallyAdded ? ' <span class="badge" style="background:var(--danger); color:#fff;">Not in manifest</span>' : '')
+      + (refNo ? '<div class="subtext" style="margin-top:2px; margin-bottom:0;">Ref.no <b class="mono">'+escapeHtml(refNo)+'</b></div>' : '')
       + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
       + '<span>Driver No. <b class="mono">'+escapeHtml(found.driverNo)+'</b></span>'
@@ -5383,7 +5474,7 @@ async function refreshReportAutoFieldsOnly(){
   document.getElementById('repTrucks').textContent = trucks;
   document.getElementById('repTotalOrders').textContent = records.length;
 
-  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt).map(r=>r.deliveredAt).sort();
+  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt && !r.preloaded).map(r=>r.deliveredAt).sort();
   const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   document.getElementById('repFirstDelivery').textContent = deliveredTimes.length ? fmt(deliveredTimes[0]) : '—';
   document.getElementById('repLastDelivery').textContent = deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—';
@@ -5426,7 +5517,7 @@ async function computeReportData(date){
   const vans = manual.repVansManual ? Number(manual.repVansManual) : autoVans;
   const trucks = manual.repTrucksManual ? Number(manual.repTrucksManual) : autoTrucks;
 
-  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt).map(r=>r.deliveredAt).sort();
+  const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt && !r.preloaded).map(r=>r.deliveredAt).sort();
   const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 
   const driverMap = {};
@@ -5498,8 +5589,8 @@ function buildReportHtml(date, rd){
     + '<tr><th>ANC Supervisor Present</th><td>'+yesNoLabel(m.repAnc)+'</td></tr>'
     + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
     + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
-    + '<tr><th>Total Load-Out Orders</th><td>'+rd.totalOrders+'</td></tr>'
-    + '<tr><th>EMPU Orders</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
+    + '<tr><th>Total Deliveries</th><td>'+rd.totalOrders+'</td></tr>'
+    + '<tr><th>EMPU Deliveries</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
     + '<tr><th>Total Preload</th><td>'+rd.totalPreload+'</td></tr>'
     + '<tr><th>First Zone Delivery</th><td>'+rd.firstDelivery+'</td></tr>'
     + '<tr><th>Last Zone Delivery</th><td>'+rd.lastDelivery+'</td></tr>'
@@ -5613,8 +5704,8 @@ async function drawReportPdf(doc, date, rd){
     ['ANC Supervisor Present', yesNoLabel(m.repAnc)],
     ['No. of Vans', String(rd.vans)],
     ['No. of Trucks', String(rd.trucks)],
-    ['Total Load-Out Orders', String(rd.totalOrders)],
-    ['EMPU Orders', String(rd.empuOrdersIncludingConnect)],
+    ['Total Deliveries', String(rd.totalOrders)],
+    ['EMPU Deliveries', String(rd.empuOrdersIncludingConnect)],
     ['Total Preload', String(rd.totalPreload)],
     ['First Zone Delivery', rd.firstDelivery],
     ['Last Zone Delivery', rd.lastDelivery]
