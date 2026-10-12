@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.22.2b)</title>
+<title>Goods Outflow — Load-Out Control (3.28.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -445,7 +445,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.22.2b</span>
+    <span class="version-tag" id="versionTagRight">3.28.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -1399,7 +1399,7 @@ async function loadDay(date){
   }catch(e){ return null; }
 }
 async function saveDay(date, dayObj){
-  await storeSet(storeKey('day:'+date), JSON.stringify(dayObj));
+  return await storeSet(storeKey('day:'+date), JSON.stringify(dayObj));
 }
 /* Multiple people can be editing the same day's data at once — a worker
    marking an order delivered, a manager changing a zone assignment, another
@@ -1602,6 +1602,7 @@ const HEADER_ALIASES = {
   zone: ['zone','zonebay','bay','zonebayno'],
   suburb: ['suburb','location','suburblocation','deliverysuburb','consigneecity'],
   items: ['item','items','itemno','itemnos','itemnumber','itemnum','noofitems','numitems','numberofitems','itemcount','noofboxes','noboxes','numboxes','numberofboxes','boxes','qty','quantity','boxcount','totalquantity','totalqty'],
+  weight: ['weight','weightkg','weightno','totalweight','grossweight','wt','kg'],
   details: ['details','detail','notes','note','description']
 };
 function detectColumns(headerRow){
@@ -2633,6 +2634,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         zone: cols.zone!==undefined ? String(r[cols.zone]||'').trim() : '',
         suburb: String(r[cols.suburb]||'').trim().toUpperCase(),
         items: Number(r[cols.items])||0,
+        weight: cols.weight!==undefined ? (Number(r[cols.weight])||0) : 0,
         details,
         isNetley: /fullserve/i.test(details),
         status: 'pending',
@@ -2700,7 +2702,11 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     externalReturns.forEach(r=>{ if(!r.vehicleType && vehicleHistory[r.driverNo]) r.vehicleType = vehicleHistory[r.driverNo]; });
 
     const dayObj = { date, uploadedAt: new Date().toISOString(), uploadedFileName: file.name, uploadedBy: currentUserCode, records, externalReturns, preloadOrders };
-    await saveDay(date, dayObj);
+    const saveOk = await saveDay(date, dayObj);
+    if(!saveOk){
+      statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">Could not save — the file was read correctly but the save to the database failed. Check your connection (or the database may be temporarily unavailable) and try again. Nothing has been saved for '+date+'.</span>';
+      return;
+    }
     await addDateToIndex(date);
     const withinRetention = date >= isoDaysAgo(RETENTION_DAYS-1);
     await cleanupOldData();
@@ -2779,11 +2785,13 @@ async function renderZoneAssignment(){
   const assignedVehicle = {}; // driverNo -> 'Van'|'Truck'
   const driverAutoAssigned = {}; // driverNo -> true if its zone was set by auto-assign, not manually
   const itemTotals = {}; // driverNo -> total items across their orders
+  const weightTotals = {}; // driverNo -> total weight (kg) across their orders
   day.records.forEach(r=>{
     if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone;
     if(r.vehicleType && !assignedVehicle[r.driverNo]) assignedVehicle[r.driverNo] = r.vehicleType;
     if(r.zoneAutoAssigned) driverAutoAssigned[r.driverNo] = true;
     itemTotals[r.driverNo] = (itemTotals[r.driverNo]||0) + (Number(r.items)||0);
+    weightTotals[r.driverNo] = (weightTotals[r.driverNo]||0) + (Number(r.weight)||0);
   });
   (day.manualDrivers||[]).forEach(m=>{
     if(m.zone && !assignedZone[m.driverNo]) assignedZone[m.driverNo] = m.zone;
@@ -2822,9 +2830,12 @@ async function renderZoneAssignment(){
       ? '<button class="zone-assign-delete" data-driver="'+escapeHtml(dn)+'" title="Remove driver">✕</button>'
       : '';
     const itemCount = itemTotals[dn] || 0;
+    const weightTotal = weightTotals[dn] || 0;
+    const weightRounded = Math.round(weightTotal*10)/10;
+    const weightLabel = weightTotal ? ' · '+(Number.isInteger(weightRounded)?weightRounded:weightRounded.toFixed(1))+' kg' : '';
     const autoTag = (currentZone && driverAutoAssigned[dn]) ? ' <span class="subtext" style="margin:0; font-weight:600;">(auto)</span>' : '';
     return '<div class="zone-assign-row">'
-      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+' <span class="subtext" style="margin:0;">· '+itemCount+' items</span>'+autoTag+'</span>'
+      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+' <span class="subtext" style="margin:0;">· '+itemCount+' items'+weightLabel+'</span>'+autoTag+'</span>'
       + '<div class="vehicle-toggle" data-driver="'+escapeHtml(dn)+'">'
       + '<button data-vehicle="Van" class="'+(currentVehicle==='Van'?'active':'')+'">Van</button>'
       + '<button data-vehicle="Truck" class="'+(currentVehicle==='Truck'?'active':'')+'">Truck</button>'
@@ -2886,22 +2897,22 @@ async function onZoneAssignChange(e){
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 }
 
-// Pure, side-effect-free algorithm: given each driver's total item count and
+// Pure, side-effect-free algorithm: given each driver's total weight (kg) and
 // vehicle type, returns the zone each should get. Trucks are assigned first
-// (highest items to lowest) from A, B, C, D, then 7, 6, 5 if there are more
-// than 4 trucks. Vans are assigned next (highest items to lowest) from 1, 2,
+// (heaviest to lightest) from A, B, C, D, then 7, 6, 5 if there are more
+// than 4 trucks. Vans are assigned next (heaviest to lightest) from 1, 2,
 // 4, 5, 6, 7 — skipping 3 as specified — minus whatever zones trucks already
 // claimed, since trucks take priority when the two pools overlap (5, 6, 7).
 // A driver with no vehicle type set isn't in either pool and is left out.
-function computeAutoZoneAssignment(itemTotals, vehicleTypes){
+function computeAutoZoneAssignment(weightTotals, vehicleTypes){
   const TRUCK_ZONE_POOL = ['A','B','C','D','7','6','5'];
   const VAN_ZONE_POOL = ['1','2','4','5','6','7'];
-  const byItemsDesc = (a,b)=>{
-    const diff = (itemTotals[b]||0) - (itemTotals[a]||0);
+  const byWeightDesc = (a,b)=>{
+    const diff = (weightTotals[b]||0) - (weightTotals[a]||0);
     return diff !== 0 ? diff : String(a).localeCompare(String(b)); // deterministic tie-break
   };
-  const trucks = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Truck').sort(byItemsDesc);
-  const vans = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Van').sort(byItemsDesc);
+  const trucks = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Truck').sort(byWeightDesc);
+  const vans = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Van').sort(byWeightDesc);
 
   const assignment = {};
   const usedZones = new Set();
@@ -2925,10 +2936,10 @@ document.getElementById('autoAssignZonesBtn').addEventListener('click', async ()
   const day = await loadDay(date);
   if(!day){ toast('No data uploaded for '+date+'.'); return; }
 
-  const itemTotals = {};
+  const weightTotals = {};
   const vehicleTypes = {};
   day.records.forEach(r=>{
-    itemTotals[r.driverNo] = (itemTotals[r.driverNo]||0) + (Number(r.items)||0);
+    weightTotals[r.driverNo] = (weightTotals[r.driverNo]||0) + (Number(r.weight)||0);
     if(r.vehicleType && !vehicleTypes[r.driverNo]) vehicleTypes[r.driverNo] = r.vehicleType;
   });
   (day.manualDrivers||[]).forEach(m=>{
@@ -2941,13 +2952,13 @@ document.getElementById('autoAssignZonesBtn').addEventListener('click', async ()
     return;
   }
 
-  const { assignment, unassignable } = computeAutoZoneAssignment(itemTotals, vehicleTypes);
+  const { assignment, unassignable } = computeAutoZoneAssignment(weightTotals, vehicleTypes);
   const truckCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Truck').length;
   const vanCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Van').length;
 
   const proceed = await confirmDialog(
     'Auto-assign zones by load size',
-    '<div>This will assign zones for <b>'+truckCount+' truck(s)</b> and <b>'+vanCount+' van(s)</b> based on their total item count — highest first. '
+    '<div>This will assign zones for <b>'+truckCount+' truck(s)</b> and <b>'+vanCount+' van(s)</b> based on their total weight — heaviest first. '
       + 'Trucks get priority for zones 5, 6 and 7 where the two pools overlap.</div>'
       + '<div style="margin-top:10px;"><b>Any existing zone already assigned to a truck or van driver will be overwritten.</b></div>'
       + (unassignable.length ? '<div style="margin-top:10px; color:var(--warning); font-weight:600;">'+unassignable.length+' driver(s) won\u2019t get a zone — there aren\u2019t enough left in the pool ('+unassignable.join(', ')+').</div>' : '')
@@ -3426,6 +3437,7 @@ document.getElementById('preloadProcessBtn').addEventListener('click', async ()=
         zone: '',
         suburb: String(r[cols.suburb]||'').trim().toUpperCase(),
         items: Number(r[cols.items])||0,
+        weight: cols.weight!==undefined ? (Number(r[cols.weight])||0) : 0,
         details,
         isNetley: /fullserve/i.test(details),
         status: 'pending'
@@ -3863,12 +3875,17 @@ async function renderFormsList(){
   listEl.innerHTML = groups.map((g,i)=>{
     const delivered = g.records.filter(r=>r.status==='delivered').length;
     const items = g.records.reduce((s,r)=>s+r.items,0);
+    const weight = g.records.reduce((s,r)=>s+(Number(r.weight)||0),0);
+    const weightRounded = Math.round(weight*10)/10;
+    const weightDisplay = Number.isInteger(weightRounded) ? weightRounded : weightRounded.toFixed(1);
     return '<div class="zone-card">'
       + '<div class="zone-head"><div><div class="zid">Zone '+escapeHtml(g.zone)+'</div>'
       + '<div class="did">Driver '+escapeHtml(g.driverNo)+'</div></div>'
       + '<div class="badge '+(delivered===g.records.length?'delivered':'pending')+'">'+delivered+' / '+g.records.length+' delivered</div></div>'
       + '<div class="zone-body">'
-      + '<div class="meta-row"><span><b>'+g.records.length+'</b> orders</span><span><b>'+items+'</b> items</span></div>'
+      + '<div class="meta-row"><span><b>'+g.records.length+'</b> orders</span><span><b>'+items+'</b> items</span>'
+      + (weight ? '<span><b>'+weightDisplay+'</b> kg</span>' : '')
+      + '</div>'
       + '<div class="btn-row">'
       + '<button class="btn btn-ghost" onclick="viewForm(\''+date+'\','+i+')">View</button>'
       + '<button class="btn btn-primary" onclick="viewFormPdf(\''+date+'\','+i+')">View PDF</button>'
@@ -5325,6 +5342,14 @@ async function runSearch(){
   results.sort((a,b)=> a.driverNo.localeCompare(b.driverNo));
   const showZone = statusFilter!=='empu';
 
+  // Same order number can legitimately appear more than once in a day's
+  // data (a rare case: two different rows — different Customer Reference
+  // Numbers — were uploaded under the same order no). Counted against the
+  // full day's records, not just the filtered results, so the Ref.no still
+  // shows even if a filter happens to only surface one of the pair.
+  const orderNoCounts = {};
+  day.records.forEach(r=>{ orderNoCounts[r.orderNo] = (orderNoCounts[r.orderNo]||0) + 1; });
+
   resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver</th>'+(showZone?'<th>Zone</th>':'')+'<th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
     + results.map(r=>{
       const preloadBadge = r.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(r.preloadedOn||'')+'</span>' : '';
@@ -5340,7 +5365,9 @@ async function runSearch(){
           ? ' <span class="badge empu-connect">Connect</span>'
           : ' <span class="badge empu-connect">order</span>';
       }
-      return '<tr><td class="mono">'+escapeHtml(r.orderNo)+preloadBadge+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
+      const refNo = orderNoCounts[r.orderNo] > 1 ? extract8DigitRef(r.customerRef) : '';
+      const refLine = refNo ? '<div class="subtext" style="margin-top:2px;">Ref.no <b class="mono">'+escapeHtml(refNo)+'</b></div>' : '';
+      return '<tr><td class="mono">'+escapeHtml(r.orderNo)+preloadBadge+refLine+'</td><td>'+escapeHtml(r.driverNo)+'</td>'
       +(showZone?'<td>'+escapeHtml(r.zone)+'</td>':'')+'<td>'+escapeHtml(r.suburb)+'</td><td>'+r.items+'</td>'
       +'<td><span class="badge '+r.status+'">'+r.status+'</span>'+empuLabel+'</td></tr>';
     }).join('')
