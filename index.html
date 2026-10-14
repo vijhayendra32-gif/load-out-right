@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.28.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.40.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -30,6 +30,10 @@
     --danger-soft:#FBE7E7;
     --warning:#B4720E;
     --warning-soft:#FBF0DD;
+    --seg1:#28496B;
+    --seg2:#C9992E;
+    --seg2-ink:#2B2100;
+    --seg3:#8A9AAB;
     --radius:10px;
     --shadow: 0 1px 2px rgba(18,24,31,0.06), 0 6px 20px rgba(18,24,31,0.05);
   }
@@ -48,6 +52,10 @@
     --danger-soft:#3A1D1D;
     --warning:#E3A542;
     --warning-soft:#382A12;
+    --seg1:#5B8AC0;
+    --seg2:#DDB04A;
+    --seg2-ink:#2B2100;
+    --seg3:#7B8794;
     --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.25);
   }
   body.a11y-large-text{ font-size:112.5%; }
@@ -347,6 +355,23 @@
   .dash-bar-fill.delivered{ background:var(--success); }
   .dash-bar-count{ width:36px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:13px; flex-shrink:0; }
   .dash-delivery-times{ display:flex; gap:12px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+  .trend-block{ margin-bottom:22px; }
+  .trend-block:last-child{ margin-bottom:0; }
+  .trend-block-title{ font-size:13px; font-weight:700; color:var(--ink); margin-bottom:10px; }
+  .trend-chart{ display:flex; align-items:flex-end; gap:10px; min-height:110px; overflow-x:auto; padding:4px 2px 0; }
+  .trend-col{ display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:0 0 auto; min-width:38px; height:110px; }
+  .trend-col-value{ font-size:10.5px; font-weight:700; color:var(--ink); margin-bottom:3px; white-space:nowrap; }
+  .trend-col-bar{ width:22px; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition:height .3s ease; }
+  .trend-seg{ width:26px; display:flex; align-items:center; justify-content:center; }
+  .trend-seg span{ font-size:9.5px; font-weight:700; line-height:1; }
+  .trend-seg.seg1{ background:var(--seg1); color:#fff; }
+  .trend-seg.seg2{ background:var(--seg2); color:var(--seg2-ink); }
+  .trend-seg.seg3{ background:var(--seg3); color:#fff; }
+  .trend-seg.top{ border-radius:4px 4px 0 0; }
+  .trend-legend{ display:flex; flex-wrap:wrap; gap:14px; font-size:11.5px; color:var(--ink-soft); margin:-4px 0 6px; }
+  .trend-legend i{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  .trend-legend i.seg1{ background:var(--seg1); } .trend-legend i.seg2{ background:var(--seg2); } .trend-legend i.seg3{ background:var(--seg3); }
+  .trend-col-label{ font-size:10px; color:var(--ink-soft); margin-top:6px; white-space:nowrap; }
   .dash-delivery-time{ flex:1; background:var(--bg); border-radius:8px; padding:12px 14px; }
   .dash-delivery-time .lbl{ display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin-bottom:4px; }
   .dash-delivery-time .val{ font-size:16px; font-weight:600; }
@@ -445,7 +470,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.28.0b</span>
+    <span class="version-tag" id="versionTagRight">3.40.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -867,20 +892,72 @@
 
     <div class="card" id="activityCoworkerCard">
       <h2>User summary</h2>
-      <div class="subtext">Login/logout times and orders in transit / delivered for the date above — all users.</div>
+      <div class="subtext">Login/logout times, orders in transit and trolleys delivered for the date above — all users. Delivered counts every trolley, so an order with more than one trolley counts once per trolley.</div>
       <div id="activityUserSummary"></div>
     </div>
 
     <div class="card" id="activityScanStatsCard">
-      <h2>Scan statistics</h2>
+      <h2>Delivery statistics</h2>
       <div class="subtext">For the date above. A re-scan of an order already past that stage doesn't change its recorded status or time, but is still counted here.</div>
       <div id="activityScanStats"></div>
+    </div>
+
+    <div class="card" id="activityTrendsCard">
+      <h2>Delivery trends</h2>
+      <div class="subtext">The same delivery statistics as above, tracked over time.</div>
+      <div class="vehicle-toggle" id="trendsPeriodToggle" style="margin-top:4px;">
+        <button data-period="daily" class="active">Daily</button>
+        <button data-period="weekly">Weekly</button>
+        <button data-period="monthly">Monthly</button>
+        <button data-period="ytd">YTD</button>
+      </div>
+      <div id="activityTrends" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card" id="activityWeightByDriverCard">
+      <h2>Load Weight (Kg)</h2>
+      <div class="subtext">Total weight loaded per driver number, from the Weight column in the uploaded data.</div>
+      <div class="vehicle-toggle" id="weightPeriodToggle" style="margin-top:4px;">
+        <button data-period="daily" class="active">Daily</button>
+        <button data-period="weekly">Weekly</button>
+        <button data-period="monthly">Monthly</button>
+        <button data-period="ytd">YTD</button>
+      </div>
+      <div id="activityWeightByDriver" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card" id="activityVehicleCard">
+      <h2>No of Orders and Items for Vehicle/Drivers</h2>
+      <div class="subtext">Orders and items split by Van, Truck, or not yet set, tracked over time.</div>
+      <div class="vehicle-toggle" id="vehiclePeriodToggle" style="margin-top:4px;">
+        <button data-period="daily" class="active">Daily</button>
+        <button data-period="weekly">Weekly</button>
+        <button data-period="monthly">Monthly</button>
+        <button data-period="ytd">YTD</button>
+      </div>
+      <div id="activityVehicle" style="margin-top:14px;"></div>
     </div>
 
     <div class="card" id="activityOrderDetailCard">
       <h2>Order detail by user</h2>
       <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it — all users.</div>
       <div id="activityOrderDetail"></div>
+    </div>
+
+    <div class="card" id="activityClearScansCard" style="display:none;">
+      <h2>Clear scan activity</h2>
+      <div class="subtext">VJ01 / master access only. Paste the order numbers whose scan activity should be wiped for a date (any text is fine — 9-digit order numbers are picked out). Each order stays on that day's manifest but goes back to pending, with who scanned/delivered it, the times and the trolley/scan counts all cleared, so it no longer shows in the Activity Log, Dashboard or reports. Preloaded orders are skipped. This can't be undone.</div>
+      <label class="field" style="max-width:220px;">
+        <span class="lbl">Date</span>
+        <input type="date" id="clearScansDate"/>
+      </label>
+      <label class="field">
+        <textarea id="clearScansInput" rows="6" placeholder="Paste order numbers here…" style="width:100%; border:1.5px solid var(--line); border-radius:8px; padding:11px 12px; font-size:15px; font-family:'Inter',sans-serif; color:var(--ink); resize:vertical;"></textarea>
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="clearScansBtn">Clear scan activity</button>
+      </div>
+      <div class="subtext" id="clearScansStatus" style="margin-top:10px; margin-bottom:0;"></div>
     </div>
 
     <div class="card" id="activityAllCard">
@@ -1581,6 +1658,102 @@ function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
+
+// Small inline "i" icon with a hover/click popover, for attaching a
+// definition to a single figure inline (as opposed to setupInfoTooltips(),
+// which only converts a <h2>+subtext pair at the top of a whole card).
+// `text` is trusted static copy, not user data — it's dropped in as HTML.
+function statInfoIcon(text){
+  return '<span class="info-icon" tabindex="0" role="button" aria-label="More info">i<div class="info-popover">'+text+'</div></span>';
+}
+
+function fmtDurationMinSec(ms){
+  const totalSec = Math.round(ms/1000);
+  const h = Math.floor(totalSec/3600);
+  const m = Math.floor((totalSec%3600)/60);
+  const s = totalSec%60;
+  return h>0 ? (h+'h '+m+'m '+s+'s') : (m+'m '+s+'s');
+}
+
+// Trolleys delivered for one delivered record, split Store/EMPU. Uses the
+// recorded trolley breakdown where it exists; older records without it count
+// as one trolley, attributed by isEmpuRecord.
+// The trolley total for an order is the highest of every signal we have
+// (in-transit scans, delivered scans, the store+EMPU breakdown, or 1) — the
+// same rule the "Multiple trolley order" table uses — so a trolley scanned
+// in transit but not yet scanned delivered, or a record whose breakdown
+// predates a later scan, is still counted. Any trolleys the Store/EMPU
+// breakdown doesn't account for go to whichever side the order belongs to.
+function deliveredTrolleys(r){
+  const st = r.storeTrolleyCount||0, em = r.empuTrolleyCount||0;
+  const n = Math.max(r.transitScanCount||0, r.deliveredScanCount||0, st+em, 1);
+  const extra = n - (st+em);
+  if(isEmpuRecord(r)) return { store: st, empu: em + extra };
+  return { store: st + extra, empu: em };
+}
+
+// Pure, side-effect-free: computes the delivery-statistics figures for one
+// day's records. Shared by the per-date "Delivery statistics" card and the
+// day-by-day trend charts, so the two always agree with each other.
+//  - avgGapMs: each scanning user's own average gap between their first
+//    (in-transit) and second (delivered) scan on an order, then averaged
+//    across users so a high-volume user doesn't outweigh a low-volume one.
+//  - totalGapTrolleys: trolleys behind that average — an order scanned more
+//    than once at either stage counts once per scan, not once per order.
+//  - totalTrolleys / storeTrolleys / empuTrolleys: trolleys delivered — an
+//    order with several trolleys counts once per trolley. Uses the recorded
+//    store/EMPU trolley breakdown where it exists; older records without it
+//    count as one trolley, attributed by isEmpuRecord.
+//  - avgDeliveriesPerUser: total delivered trolleys divided evenly across
+//    however many users did any delivering that day.
+//  - multiTrolleyOrders: orders scanned more than once at either stage,
+//    with how many times (trolleys) each one was scanned.
+function computeDeliveryStats(day){
+  const gapsByUser = {}; // completedBy -> [gap1, gap2, ...] in ms
+  const trolleysByUser = {}; // completedBy -> total trolleys behind those gaps
+  const multiTrolleyOrders = []; // {orderNo, trolleys}
+  const completedCounts = {};
+  let storeDeliveries = 0, empuDeliveries = 0; // delivered orders split by whether EMPU was involved
+  let storeTrolleys = 0, empuTrolleys = 0;
+  (day ? day.records : []).forEach(r=>{
+    if(r.status==='delivered' && r.completedBy){
+      completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + 1;
+      if(isEmpuRecord(r)) empuDeliveries++; else storeDeliveries++;
+      const t = deliveredTrolleys(r);
+      storeTrolleys += t.store; empuTrolleys += t.empu;
+    }
+    // firstDeliveredAt only exists on records scanned after that field was
+    // introduced; older records only have deliveredAt, which for the
+    // (usual) single-delivery order is the same moment — without this
+    // fallback every day from before then had no timing at all.
+    const firstDelivered = r.firstDeliveredAt || r.deliveredAt;
+    if(r.inTransitAt && firstDelivered && r.completedBy){
+      const gap = new Date(firstDelivered) - new Date(r.inTransitAt);
+      if(gap >= 0){
+        gapsByUser[r.completedBy] = gapsByUser[r.completedBy] || [];
+        gapsByUser[r.completedBy].push(gap);
+        const trolleyCount = Math.max(r.transitScanCount||0, r.deliveredScanCount||0) || 1;
+        trolleysByUser[r.completedBy] = (trolleysByUser[r.completedBy]||0) + trolleyCount;
+      }
+    }
+    const multiCount = Math.max(r.transitScanCount||0, r.deliveredScanCount||0, (r.storeTrolleyCount||0)+(r.empuTrolleyCount||0));
+    if(multiCount > 1) multiTrolleyOrders.push({ orderNo: r.orderNo, trolleys: multiCount });
+  });
+  const perUserAvgGaps = Object.values(gapsByUser).map(gaps => gaps.reduce((a,b)=>a+b,0)/gaps.length);
+  const avgGapMs = perUserAvgGaps.length ? perUserAvgGaps.reduce((a,b)=>a+b,0)/perUserAvgGaps.length : null;
+  const totalGapTrolleys = Object.values(trolleysByUser).reduce((a,b)=>a+b,0);
+  const deliveryCounts = Object.values(completedCounts);
+  const totalDeliveries = deliveryCounts.reduce((a,b)=>a+b,0);
+  const totalTrolleys = storeTrolleys + empuTrolleys;
+  const extraTrolleys = totalTrolleys - totalDeliveries; // trolleys beyond one per delivered order
+  const avgDeliveriesPerUser = deliveryCounts.length ? (totalTrolleys/deliveryCounts.length) : null;
+  return {
+    avgGapMs, gapUserCount: perUserAvgGaps.length, totalGapTrolleys,
+    avgDeliveriesPerUser, deliveryUserCount: deliveryCounts.length, totalDeliveries,
+    storeDeliveries, empuDeliveries, storeTrolleys, empuTrolleys, totalTrolleys, extraTrolleys,
+    multiTrolleyOrders
+  };
+}
 function extract8DigitRef(raw){
   // The uploaded Customer Reference Number column may carry extra text
   // around the actual reference — pull out a standalone run of exactly 8
@@ -1706,7 +1879,7 @@ function showView(name){
     clearInterval(reportInterval);
     reportInterval = null;
   }
-  if(name==='activity') renderActivityLog();
+  if(name==='activity') refreshActivityPage();
 }
 
 let lastKnownToday = todayISO();
@@ -2050,8 +2223,12 @@ async function renderActivityLog(){
   document.getElementById('activityMyStatusCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityCoworkerCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityScanStatsCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityTrendsCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityWeightByDriverCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityVehicleCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityOrderDetailCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityAllCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityClearScansCard').style.display = (isManagerView && canClearScanData()) ? 'block' : 'none';
   document.getElementById('activityUploadHistoryCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityMyTodayCard').style.display = isManagerView ? 'none' : 'block';
 
@@ -2092,7 +2269,9 @@ async function renderActivityLog(){
   if(day){
     day.records.forEach(r=>{
       if(r.status==='delivered' && r.completedBy){
-        completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + 1;
+        // Trolleys, not orders: an order with several trolleys counts once per trolley.
+        const t = deliveredTrolleys(r);
+        completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + t.store + t.empu;
       }else if(r.scannedBy && r.status!=='delivered'){
         // scanned (picked up) by this user but not yet completed today
         pendingCounts[r.scannedBy] = (pendingCounts[r.scannedBy]||0) + 1;
@@ -2100,45 +2279,31 @@ async function renderActivityLog(){
     });
   }
 
-  // Scan statistics: time between first and second scan, deliveries per
-  // scanning user, and orders scanned more than once at either stage.
+  // Delivery statistics for the selected date — see computeDeliveryStats()
+  // for how each figure is derived; it's shared with the trend charts below
+  // so the two never disagree.
   const statsBox = document.getElementById('activityScanStats');
   if(day){
-    const gapsByUser = {}; // completedBy -> [gap1, gap2, ...] in ms
-    const multiScanOrders = [];
-    day.records.forEach(r=>{
-      if(r.inTransitAt && r.firstDeliveredAt && r.completedBy){
-        const gap = new Date(r.firstDeliveredAt) - new Date(r.inTransitAt);
-        if(gap >= 0){
-          gapsByUser[r.completedBy] = gapsByUser[r.completedBy] || [];
-          gapsByUser[r.completedBy].push(gap);
-        }
-      }
-      if((r.transitScanCount||0) > 1 || (r.deliveredScanCount||0) > 1){
-        multiScanOrders.push(r.orderNo);
-      }
-    });
-    // Each user's own average gap first, THEN the average of those
-    // per-user averages — so a user who happened to deliver many orders
-    // that day doesn't get weighted more heavily than one who delivered
-    // only a couple. E.g. user averages of 2, 3 and 4 min give an overall
-    // average of 3 min, not a volume-weighted figure.
-    const perUserAvgGaps = Object.values(gapsByUser).map(gaps => gaps.reduce((a,b)=>a+b,0)/gaps.length);
-    const avgGapMs = perUserAvgGaps.length ? perUserAvgGaps.reduce((a,b)=>a+b,0)/perUserAvgGaps.length : null;
-    const totalGapOrders = Object.values(gapsByUser).reduce((sum,gaps)=>sum+gaps.length, 0);
-    const fmtDuration = (ms)=>{
-      const totalMin = Math.round(ms/60000);
-      const h = Math.floor(totalMin/60), m = totalMin%60;
-      return h>0 ? (h+'h '+m+'m') : (m+' min');
-    };
-
-    const deliveryCounts = Object.values(completedCounts);
-    const avgDeliveriesPerUser = deliveryCounts.length ? (deliveryCounts.reduce((a,b)=>a+b,0)/deliveryCounts.length) : null;
-
+    const stats = computeDeliveryStats(day);
+    const multiListHtml = stats.multiTrolleyOrders.length
+      ? '<div style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Order No.</th><th style="text-align:center;">No. of trolleys</th></tr></thead><tbody>'
+        + stats.multiTrolleyOrders.map(o=>'<tr><td class="mono">'+escapeHtml(o.orderNo)+'</td><td style="text-align:center;">'+o.trolleys+'</td></tr>').join('')
+        + '</tbody></table></div>'
+      : '';
     statsBox.innerHTML =
-      '<div class="subtext" style="margin-bottom:6px;">Average time from first to second scan: <b>'+(avgGapMs!==null ? fmtDuration(avgGapMs) : '—')+'</b>'+(perUserAvgGaps.length ? ' (average of '+perUserAvgGaps.length+' user'+(perUserAvgGaps.length===1?'':'s')+'\u2019 own averages, across '+totalGapOrders+' order'+(totalGapOrders===1?'':'s')+')' : '')+'</div>'
-      + '<div class="subtext" style="margin-bottom:6px;">Average deliveries per scanning user: <b>'+(avgDeliveriesPerUser!==null ? avgDeliveriesPerUser.toFixed(1) : '—')+'</b>'+(deliveryCounts.length ? ' (across '+deliveryCounts.length+' user'+(deliveryCounts.length===1?'':'s')+')' : '')+'</div>'
-      + '<div class="subtext" style="margin-bottom:0;">Orders scanned more than once: <b>'+multiScanOrders.length+'</b>'+(multiScanOrders.length ? ' — '+multiScanOrders.map(escapeHtml).join(', ') : '')+'</div>';
+      '<div class="subtext" style="margin-bottom:6px;">Average time per user: <b>'+(stats.avgGapMs!==null ? fmtDurationMinSec(stats.avgGapMs) : '—')+'</b>'
+        + statInfoIcon('Average of each scanning user\u2019s own average gap between their first (in-transit) scan and second (delivered) scan on an order, then averaged across users so a high-volume user doesn\u2019t outweigh a low-volume one.'+(stats.gapUserCount ? ' Based on '+stats.gapUserCount+' user'+(stats.gapUserCount===1?'':'s')+'\u2019 own averages, across '+stats.totalGapTrolleys+' trolley'+(stats.totalGapTrolleys===1?'':'s')+' — an order scanned more than once at either stage counts once per scan, not once per order.' : ''))
+      + '</div>'
+      + '<div class="subtext" style="margin-bottom:6px;">Delivery per user: <b>'+(stats.avgDeliveriesPerUser!==null ? stats.avgDeliveriesPerUser.toFixed(1) : '—')+'</b>'
+        + statInfoIcon('Average number of trolleys delivered per user. Counts every trolley delivered — an order with more than one trolley counts once per trolley — divided evenly across however many users did any delivering, not weighted by how many each one handled.'+(stats.deliveryUserCount ? ' Based on '+stats.totalTrolleys+' trolley'+(stats.totalTrolleys===1?'':'s')+' across '+stats.deliveryUserCount+' user'+(stats.deliveryUserCount===1?'':'s')+'.' : ''))
+      + '</div>'
+      + '<div class="subtext" style="margin-bottom:6px;">Total trolleys delivered: <b>'+stats.totalTrolleys+'</b> <span style="color:var(--ink-soft);">(Store '+stats.storeTrolleys+' \u00b7 EMPU '+stats.empuTrolleys+')</span>'
+        + statInfoIcon('Every trolley delivered for the date, split by whether it was delivered by Store or EMPU. An order with more than one trolley counts once per trolley. Here: '+stats.totalDeliveries+' orders + '+stats.extraTrolleys+' additional trolley'+(stats.extraTrolleys===1?'':'s')+' on multi-trolley orders = '+stats.totalTrolleys+'.')
+      + '</div>'
+      + '<div class="subtext" style="margin-bottom:0;">Multiple trolley order: <b>'+stats.multiTrolleyOrders.length+'</b>'
+        + statInfoIcon('Orders where the same order number was scanned more than once at either the in-transit or delivered stage — each extra scan usually means a separate physical trolley for that order. The table below lists each order and how many trolleys it recorded.')
+      + '</div>'
+      + multiListHtml;
   }else{
     statsBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data uploaded for this date.</div>';
   }
@@ -2166,7 +2331,7 @@ async function renderActivityLog(){
       const delivered = completedCounts[code] || 0;
       return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+loginsText+'</td><td>'+logoutsText+'</td><td class="center">'+pending+'</td><td class="center">'+delivered+'</td></tr>';
     }).join('');
-    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>In Transit</th><th>Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Transit</th><th>Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
   }
 
   // Order-level detail, consolidated across every user for this date.
@@ -2206,7 +2371,366 @@ async function renderActivityLog(){
   }).join('');
   box.innerHTML = '<table><thead><tr><th>User</th><th>Event</th><th>Time</th></tr></thead><tbody>'+rows2+'</tbody></table>';
 }
-document.getElementById('activityDate').addEventListener('change', renderActivityLog);
+
+// Monday of the calendar week containing dateStr, as YYYY-MM-DD — used to
+// bucket dates into weeks for the trend charts below.
+function isoWeekStart(dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day===0 ? -6 : 1-day); // days back to Monday
+  d.setDate(d.getDate()+diff);
+  // toISOString() always renders in UTC, which would silently shift the
+  // date backward a day in any timezone ahead of UTC — shift the instant
+  // itself by the local offset first so the slice comes out as the
+  // intended local calendar date (same trick todayISO()/isoDaysAgo() use).
+  const tz = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - tz*60000);
+  return local.toISOString().slice(0,10);
+}
+
+// One small vertical bar per bucket, all sharing a common baseline — used
+// by both the delivery trend charts and the weight-by-driver chart.
+function renderTrendBarBlock(title, labels, series, valueFmt){
+  const numericSeries = series.map(v=> v==null ? 0 : v);
+  const max = Math.max(1, ...numericSeries);
+  const cols = labels.map((label,i)=>{
+    const v = numericSeries[i];
+    const px = Math.max(2, Math.round((v/max)*78));
+    return '<div class="trend-col">'
+      + '<div class="trend-col-value">'+escapeHtml(valueFmt(series[i]))+'</div>'
+      + '<div class="trend-col-bar" style="height:'+px+'px;"></div>'
+      + '<div class="trend-col-label">'+escapeHtml(label)+'</div>'
+      + '</div>';
+  }).join('');
+  return '<div class="trend-block"><div class="trend-block-title">'+escapeHtml(title)+'</div><div class="trend-chart">'+cols+'</div></div>';
+}
+
+// Same layout as renderTrendBarBlock, but each bar is built from stacked
+// segments (first segment at the bottom) with the total printed above it.
+// segments: [{ name, series:[...one value per label] }] — at most 3, coloured
+// navy / mustard / slate in order. A segment that is zero in every bucket is
+// left out of the legend.
+function renderTrendStackedBlock(title, labels, segments){
+  const totals = labels.map((_,i)=> segments.reduce((sum,sg)=>sum+(sg.series[i]||0),0));
+  const max = Math.max(1, ...totals);
+  const cols = labels.map((label,i)=>{
+    const total = totals[i];
+    const totalPx = total ? Math.max(2, Math.round((total/max)*78)) : 2;
+    // Pixel heights that always add back up to totalPx.
+    let used = 0;
+    const px = segments.map((sg,k)=>{
+      const v = sg.series[i]||0;
+      const h = (k===segments.length-1) ? totalPx-used : Math.round((v/(total||1))*totalPx);
+      used += h; return Math.max(0,h);
+    });
+    let topIdx = -1;
+    segments.forEach((sg,k)=>{ if((sg.series[i]||0)>0) topIdx = k; });
+    const segHtml = segments.map((sg,k)=>{
+      const v = sg.series[i]||0;
+      if(!v || !px[k]) return '';
+      const showNum = px[k]>=13 && String(v).length<=3;
+      return '<div class="trend-seg seg'+(k+1)+(k===topIdx?' top':'')+'" style="height:'+px[k]+'px;">'+(showNum?'<span>'+v+'</span>':'')+'</div>';
+    }).reverse().join(''); // DOM order is top-to-bottom
+    const tip = segments.map(sg=>(sg.series[i]||0)+' '+sg.name).join(', ');
+    return '<div class="trend-col" title="'+escapeHtml(label+': '+tip)+'">'
+      + '<div class="trend-col-value">'+total+'</div>'
+      + (segHtml || '<div class="trend-seg seg1 top" style="height:2px;"></div>')
+      + '<div class="trend-col-label">'+escapeHtml(label)+'</div>'
+      + '</div>';
+  }).join('');
+  const legend = '<div class="trend-legend">'+segments.map((sg,k)=> sg.series.some(v=>v>0) ? '<span><i class="seg'+(k+1)+'"></i>'+escapeHtml(sg.name)+'</span>' : '').join('')+'</div>';
+  return '<div class="trend-block"><div class="trend-block-title">'+escapeHtml(title)+'</div>'+legend+'<div class="trend-chart">'+cols+'</div></div>';
+}
+
+// Groups every date on record (up to and including the Activity Log date)
+// into daily/weekly/monthly buckets, most recent last. Weekly buckets are
+// Mon-Sun calendar weeks; monthly buckets are calendar months. Only dates
+// that actually have data are included, so an empty stretch never pads out
+// the chart with zero-bars.
+// Australian financial year: 1 July to 30 June. Returns the 1 July that
+// starts the financial year containing the given YYYY-MM-DD date.
+function fyStartISO(dateStr){
+  const [y,m] = dateStr.split('-').map(Number);
+  return (m>=7 ? y : y-1)+'-07-01';
+}
+function fyLabel(dateStr){
+  const y = Number(fyStartISO(dateStr).slice(0,4));
+  return 'FY '+y+'\u2013'+String(y+1).slice(2);
+}
+function fmtDMY(iso){ const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
+// Small note under a YTD view: the period it covers, and — because the app
+// only keeps RETENTION_DAYS of history — where the data actually starts.
+function ytdNoteHtml(upToDate, firstDataDate){
+  const start = fyStartISO(upToDate);
+  let t = fyLabel(upToDate)+' year to date: '+fmtDMY(start)+' to '+fmtDMY(upToDate)+'.';
+  if(firstDataDate && firstDataDate > start) t += ' Data on record starts from '+fmtDMY(firstDataDate)+' (records are kept for '+RETENTION_DAYS+' days), so earlier days are not included.';
+  return '<div class="subtext" style="margin-top:-6px; margin-bottom:10px;">'+t+'</div>';
+}
+async function buildDateBuckets(period, upToDate, maxBuckets){
+  let allDates = (await loadDatesIndex()).filter(d=>d<=upToDate).sort();
+  if(period==='ytd'){
+    // Financial year to date, shown month by month (Jul, Aug, ...).
+    const fyStart = fyStartISO(upToDate);
+    allDates = allDates.filter(d=>d>=fyStart);
+    period = 'monthly';
+    maxBuckets = 12;
+  }
+  if(period==='daily'){
+    return allDates.slice(-maxBuckets).map(d=>({ label: formatDDMM(d), dates:[d] }));
+  }
+  if(period==='weekly'){
+    const byWeek = {};
+    allDates.forEach(d=>{ const wk = isoWeekStart(d); (byWeek[wk] = byWeek[wk] || []).push(d); });
+    return Object.keys(byWeek).sort().slice(-maxBuckets).map(wk=>({ label: formatDDMM(wk), dates: byWeek[wk] }));
+  }
+  // monthly
+  const byMonth = {};
+  allDates.forEach(d=>{ const mo = d.slice(0,7); (byMonth[mo] = byMonth[mo] || []).push(d); });
+  return Object.keys(byMonth).sort().slice(-maxBuckets).map(mo=>{
+    const [y,m] = mo.split('-');
+    const label = new Date(Number(y), Number(m)-1, 1).toLocaleDateString([], {month:'short', year:'2-digit'});
+    return { label, dates: byMonth[mo] };
+  });
+}
+
+async function renderDeliveryTrends(){
+  if(!(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)) return; // manager-only card, same gate as the rest of Activity Log
+  const period = (document.querySelector('#trendsPeriodToggle button.active')||{}).dataset.period || 'daily';
+  const selectedDate = document.getElementById('activityDate').value || todayISO();
+  const container = document.getElementById('activityTrends');
+  const maxBuckets = period==='daily' ? 14 : (period==='weekly' ? 8 : 6); // ytd is handled inside buildDateBuckets
+  const buckets = await buildDateBuckets(period, selectedDate, maxBuckets);
+  if(!buckets.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data in the retention window yet.</div>';
+    return;
+  }
+
+  const neededDates = [...new Set(buckets.flatMap(b=>b.dates))];
+  const dayMap = {};
+  await Promise.all(neededDates.map(async d=>{ dayMap[d] = await loadDay(d); }));
+
+  const bucketStats = buckets.map(b=>{
+    const merged = { records: [] };
+    const perDayAvgDeliveries = [];
+    b.dates.forEach(d=>{
+      const day = dayMap[d];
+      if(!day || !day.records) return;
+      merged.records.push(...day.records);
+      const dayStats = computeDeliveryStats(day);
+      if(dayStats.avgDeliveriesPerUser!==null) perDayAvgDeliveries.push(dayStats.avgDeliveriesPerUser);
+    });
+    // Weekly/monthly: the average of each day's own per-user figure, so a
+    // week reads on the same scale as a single day instead of piling up.
+    const avgDeliveriesPerUserDaily = perDayAvgDeliveries.length ? perDayAvgDeliveries.reduce((a,c)=>a+c,0)/perDayAvgDeliveries.length : null;
+    return { label: b.label, stats: computeDeliveryStats(merged), avgDeliveriesPerUserDaily };
+  });
+
+  const labels = bucketStats.map(b=>b.label);
+  container.innerHTML = (period==='ytd' ? ytdNoteHtml(selectedDate, buckets[0].dates[0]) : '') +
+    renderTrendBarBlock('Average time per user', labels, bucketStats.map(b=>b.stats.avgGapMs), v=> v!=null ? fmtDurationMinSec(v) : '—')
+    + renderTrendBarBlock('Average delivery per user', labels, bucketStats.map(b=>b.avgDeliveriesPerUserDaily), v=> v!=null ? v.toFixed(1) : '—')
+    + renderTrendStackedBlock('Total orders delivered', labels, [
+        { name:'Store', series: bucketStats.map(b=>b.stats.storeDeliveries) },
+        { name:'EMPU',  series: bucketStats.map(b=>b.stats.empuDeliveries) }
+      ])
+    + renderTrendStackedBlock('Total trolleys delivered', labels, [
+        { name:'Store', series: bucketStats.map(b=>b.stats.storeTrolleys) },
+        { name:'EMPU',  series: bucketStats.map(b=>b.stats.empuTrolleys) }
+      ]);
+}
+document.getElementById('trendsPeriodToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-period]');
+  if(!btn) return;
+  document.querySelectorAll('#trendsPeriodToggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDeliveryTrends();
+});
+
+async function renderWeightByDriver(){
+  if(!(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)) return; // manager-only card, same gate as the rest of Activity Log
+  const period = (document.querySelector('#weightPeriodToggle button.active')||{}).dataset.period || 'daily';
+  const selectedDate = document.getElementById('activityDate').value || todayISO();
+  const container = document.getElementById('activityWeightByDriver');
+  const buckets = await buildDateBuckets(period, selectedDate, period==='ytd' ? 12 : 1);
+  // Daily/weekly/monthly here means "this day/this week/this month" (the
+  // single most recent bucket of that size up to the selected date), not a
+  // trend over several — the chart below breaks that one period down by
+  // driver instead of by time.
+  if(!buckets.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data in the retention window yet.</div>';
+    return;
+  }
+  // YTD is one combined bucket (every month of the financial year so far).
+  const bucket = period==='ytd'
+    ? { label: fyLabel(selectedDate), dates: buckets.flatMap(b=>b.dates) }
+    : buckets[buckets.length-1];
+  const dayMap = {};
+  await Promise.all(bucket.dates.map(async d=>{ dayMap[d] = await loadDay(d); }));
+
+  const weightByDriver = {};
+  const weightByVehicle = { Van:0, Truck:0, Other:0 };
+  bucket.dates.forEach(d=>{
+    const day = dayMap[d];
+    if(!day || !day.records) return;
+    day.records.forEach(r=>{
+      const w = Number(r.weight)||0;
+      weightByDriver[r.driverNo] = (weightByDriver[r.driverNo]||0) + w;
+      weightByVehicle[r.vehicleType==='Van'||r.vehicleType==='Truck' ? r.vehicleType : 'Other'] += w;
+    });
+  });
+  const fmtKg = v=>{ const r = Math.round(v*10)/10; return (Number.isInteger(r)?r:r.toFixed(1))+' kg'; };
+  const totalWeight = weightByVehicle.Van + weightByVehicle.Truck + weightByVehicle.Other;
+  const driverNos = Object.keys(weightByDriver).filter(dn=>weightByDriver[dn]>0).sort((a,b)=>weightByDriver[b]-weightByDriver[a]);
+  if(!driverNos.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No weight data for this period — make sure the uploaded file has a Weight column.</div>';
+    return;
+  }
+  const periodLabel = period==='daily' ? 'for '+formatDDMM(bucket.dates[0])
+    : period==='weekly' ? 'for the week of '+bucket.label
+    : period==='ytd' ? 'for '+bucket.label+' year to date'
+    : 'for '+bucket.label;
+  const breakdown = [['Van',weightByVehicle.Van],['Truck',weightByVehicle.Truck],['Not set',weightByVehicle.Other]]
+    .filter(x=>x[1]>0).map(x=>x[0]+' '+fmtKg(x[1])).join(' \u00b7 ');
+  container.innerHTML = (period==='ytd' ? ytdNoteHtml(selectedDate, bucket.dates[0]) : '')
+    + '<div class="subtext" style="margin-bottom:12px;">Total Weight: <b>'+fmtKg(totalWeight)+'</b>'
+      + (breakdown ? ' <span style="color:var(--ink-soft);">('+escapeHtml(breakdown)+')</span>' : '')
+      + statInfoIcon('Combined weight of every Van and Truck load for the period, from the Weight column in the uploaded data. Drivers with no Van/Truck set yet are included in the total and shown as Not set.')
+    + '</div>'
+    + '<div class="subtext" style="margin-bottom:10px;">Total load weight by driver, '+periodLabel+'.</div>'
+    + renderTrendBarBlock('Weight (kg)', driverNos, driverNos.map(dn=>weightByDriver[dn]), fmtKg);
+}
+document.getElementById('weightPeriodToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-period]');
+  if(!btn) return;
+  document.querySelectorAll('#weightPeriodToggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderWeightByDriver();
+});
+
+async function renderVehicleTrends(){
+  if(!(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)) return; // manager-only card
+  const period = (document.querySelector('#vehiclePeriodToggle button.active')||{}).dataset.period || 'daily';
+  const selectedDate = document.getElementById('activityDate').value || todayISO();
+  const container = document.getElementById('activityVehicle');
+  const maxBuckets = period==='daily' ? 14 : (period==='weekly' ? 8 : 6); // ytd is handled inside buildDateBuckets
+  const buckets = await buildDateBuckets(period, selectedDate, maxBuckets);
+  if(!buckets.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data in the retention window yet.</div>';
+    return;
+  }
+  const neededDates = [...new Set(buckets.flatMap(b=>b.dates))];
+  const dayMap = {};
+  await Promise.all(neededDates.map(async d=>{ dayMap[d] = await loadDay(d); }));
+  const bucketStats = buckets.map(b=>{
+    const vehicle = { Van:{orders:0,items:0}, Truck:{orders:0,items:0}, Other:{orders:0,items:0} };
+    b.dates.forEach(d=>{
+      const day = dayMap[d];
+      if(!day || !day.records) return;
+      day.records.forEach(r=>{
+        const v = vehicle[r.vehicleType] || vehicle.Other; // drivers with no Van/Truck set yet
+        v.orders++; v.items += Number(r.items)||0;
+      });
+    });
+    return { label: b.label, vehicle };
+  });
+  const labels = bucketStats.map(b=>b.label);
+  container.innerHTML = (period==='ytd' ? ytdNoteHtml(selectedDate, buckets[0].dates[0]) : '') +
+    renderTrendStackedBlock('Orders', labels, [
+        { name:'Van',   series: bucketStats.map(b=>b.vehicle.Van.orders) },
+        { name:'Truck', series: bucketStats.map(b=>b.vehicle.Truck.orders) },
+        { name:'Not set', series: bucketStats.map(b=>b.vehicle.Other.orders) }
+      ])
+    + renderTrendStackedBlock('Items', labels, [
+        { name:'Van',   series: bucketStats.map(b=>b.vehicle.Van.items) },
+        { name:'Truck', series: bucketStats.map(b=>b.vehicle.Truck.items) },
+        { name:'Not set', series: bucketStats.map(b=>b.vehicle.Other.items) }
+      ]);
+}
+document.getElementById('vehiclePeriodToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-period]');
+  if(!btn) return;
+  document.querySelectorAll('#vehiclePeriodToggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderVehicleTrends();
+});
+
+// Only VJ01 and admin-created master codes may wipe scan data — LL01/M01/TL01/NTL01
+// can see the Activity Log but not clear anything from it.
+function canClearScanData(){
+  return currentUserCode==='VJ01' || currentUserIsMasterAccess;
+}
+// Admin-only cleanup: wipes the scan activity off specific orders on a date
+// (status back to pending, scanner/deliverer, timestamps and scan/trolley
+// counts all cleared) while leaving the order itself, its driver and zone
+// on the manifest. Preloaded orders are skipped — their delivered state
+// comes from the preload workflow, not a scan on this day.
+document.getElementById('clearScansDate').addEventListener('focus', ()=>{
+  const el = document.getElementById('clearScansDate');
+  if(!el.value) el.value = document.getElementById('activityDate').value || todayISO();
+});
+document.getElementById('clearScansBtn').addEventListener('click', async ()=>{
+  if(!canClearScanData()) return;
+  const statusEl = document.getElementById('clearScansStatus');
+  statusEl.style.color = '';
+  const date = document.getElementById('clearScansDate').value;
+  const orderNos = [...new Set(document.getElementById('clearScansInput').value.match(/(?<!\d)\d{9}(?!\d)/g) || [])];
+  if(!date){ statusEl.textContent = 'Choose a date first.'; return; }
+  if(!orderNos.length){ statusEl.textContent = 'No 9-digit order numbers found in what you pasted.'; return; }
+
+  const day = await loadDay(date);
+  if(!day){ statusEl.textContent = 'No data on record for '+formatDDMMYYYY(date)+'.'; return; }
+  const wanted = new Set(orderNos);
+  const found = day.records.filter(r=>wanted.has(r.orderNo));
+  const clearable = found.filter(r=>!r.preloaded);
+  const skippedPreloaded = found.filter(r=>r.preloaded).map(r=>r.orderNo);
+  const foundNos = new Set(found.map(r=>r.orderNo));
+  const notFound = orderNos.filter(n=>!foundNos.has(n));
+  if(!clearable.length){
+    statusEl.textContent = 'Nothing to clear — none of those orders are on '+formatDDMMYYYY(date)+(skippedPreloaded.length ? ' (the '+skippedPreloaded.length+' found were preloaded).' : '.');
+    return;
+  }
+
+  const proceed = await confirmDialog(
+    'Clear scan activity',
+    '<div>This will reset <b>'+clearable.length+' record'+(clearable.length===1?'':'s')+'</b> on <b>'+formatDDMMYYYY(date)+'</b> back to pending and wipe who scanned/delivered them, the times, and the scan/trolley counts.</div>'
+      + (notFound.length ? '<div style="margin-top:10px; color:var(--warning); font-weight:600;">'+notFound.length+' pasted order number'+(notFound.length===1?'':'s')+' not found on that date: '+notFound.map(escapeHtml).join(', ')+'.</div>' : '')
+      + (skippedPreloaded.length ? '<div style="margin-top:10px; color:var(--warning); font-weight:600;">'+skippedPreloaded.length+' preloaded order'+(skippedPreloaded.length===1?'':'s')+' will be skipped: '+skippedPreloaded.map(escapeHtml).join(', ')+'.</div>' : '')
+      + '<div style="margin-top:10px;"><b>This can\u2019t be undone.</b></div>',
+    'Clear activity'
+  );
+  if(!proceed) return;
+
+  let cleared = 0;
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    cleared = 0; // the transaction may retry — count only the final pass
+    freshDay.records.forEach(r=>{
+      if(!wanted.has(r.orderNo) || r.preloaded) return;
+      r.status = 'pending';
+      ['inTransitAt','scannedBy','deliveredAt','firstDeliveredAt','completedBy','loadedAt',
+       'transitScanCount','deliveredScanCount','storeTrolleyCount','empuTrolleyCount'].forEach(k=>{ delete r[k]; });
+      cleared++;
+    });
+  });
+  if(!ok){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Could not save — nothing was changed. Check your connection and try again.'; return; }
+
+  statusEl.style.color = 'var(--success)';
+  statusEl.textContent = 'Cleared scan activity on '+cleared+' record'+(cleared===1?'':'s')+' for '+formatDDMMYYYY(date)+'.';
+  document.getElementById('clearScansInput').value = '';
+  toast('Cleared scan activity on '+cleared+' record'+(cleared===1?'':'s')+'.');
+  refreshActivityPage();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+});
+
+function refreshActivityPage(){
+  renderActivityLog();
+  renderDeliveryTrends();
+  renderWeightByDriver();
+  renderVehicleTrends();
+}
+document.getElementById('activityDate').addEventListener('change', refreshActivityPage);
 
 const N_CODE_EXTRA_ACCESS_VIEWS = ['forms','preload']; // EMPU codes (N_CODES) get these on top of the usual co-worker access; CW01-CW10 do not
 
@@ -2387,20 +2911,29 @@ function setupInfoTooltips(){
     h2.appendChild(document.createTextNode(' '));
     h2.appendChild(icon);
     subtext.style.display = 'none';
-
-    icon.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      const wasOpen = icon.classList.contains('open');
-      document.querySelectorAll('.info-icon.open').forEach(el=>el.classList.remove('open'));
-      if(!wasOpen) icon.classList.add('open');
-    });
-    icon.addEventListener('keydown', (e)=>{
-      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); icon.click(); }
-    });
   });
 }
-document.addEventListener('click', ()=>{
+// Single delegated handler for every info icon on the page — both the ones
+// setupInfoTooltips() builds from a <h2>+subtext pair, and any embedded
+// directly in dynamically-rendered content via statInfoIcon(). Delegation
+// means re-rendered content (like the stat lines above) never needs its
+// listeners rebound, and nothing gets double-bound.
+document.addEventListener('click', (e)=>{
+  const icon = e.target.closest('.info-icon');
+  if(icon){
+    e.stopPropagation();
+    const wasOpen = icon.classList.contains('open');
+    document.querySelectorAll('.info-icon.open').forEach(el=>el.classList.remove('open'));
+    if(!wasOpen) icon.classList.add('open');
+    return;
+  }
   document.querySelectorAll('.info-icon.open').forEach(el=>el.classList.remove('open'));
+});
+document.addEventListener('keydown', (e)=>{
+  if((e.key==='Enter' || e.key===' ') && e.target.classList && e.target.classList.contains('info-icon')){
+    e.preventDefault();
+    e.target.click();
+  }
 });
 
 async function completeLogin(){
@@ -5276,6 +5809,7 @@ async function liveOrderLookup(){
       + '<span>Zone <b class="mono">'+escapeHtml(found.zone)+'</b></span>'
       + '<span>Suburb <b>'+escapeHtml(found.suburb)+'</b></span>'
       + '<span>Items <b>'+found.items+'</b></span>'
+      + ((Number(found.weight)||0) > 0 ? '<span>Weight <b>'+(Math.round(Number(found.weight)*10)/10)+' kg</b></span>' : '')
       + (trolleyCount ? '<span>No of trolleys <b>'+trolleyCount+'</b></span>' : '')
       + '<span><span class="badge '+found.status+'">'+found.status+'</span></span>'
       + '</div>'
@@ -5571,6 +6105,9 @@ async function computeReportData(date){
     .sort((a,b)=> String(a.zone).localeCompare(String(b.zone)));
 
   const empuOrdersCombined = records.filter(r=>r.status==='delivered' && (r.isNetley || isEmpuRecord(r)));
+  // Trolleys come from the same helper as the Activity Log's delivery
+  // statistics, so the two always agree.
+  const trolleyStats = computeDeliveryStats({ records });
 
   return {
     manual,
@@ -5578,6 +6115,10 @@ async function computeReportData(date){
     totalOrders: records.length,
     totalPreload: preloadOrders.length,
     empuOrdersIncludingConnect: empuOrdersCombined.length,
+    storeOrders: records.length - empuOrdersCombined.length,
+    totalTrolleys: trolleyStats.totalTrolleys,
+    storeTrolleys: trolleyStats.storeTrolleys,
+    empuTrolleys: trolleyStats.empuTrolleys,
     firstDelivery: deliveredTimes.length ? fmt(deliveredTimes[0]) : '—',
     lastDelivery: deliveredTimes.length ? fmt(deliveredTimes[deliveredTimes.length-1]) : '—',
     driverSnapshot,
@@ -5616,8 +6157,12 @@ function buildReportHtml(date, rd){
     + '<tr><th>ANC Supervisor Present</th><td>'+yesNoLabel(m.repAnc)+'</td></tr>'
     + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
     + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
-    + '<tr><th>Total Deliveries</th><td>'+rd.totalOrders+'</td></tr>'
-    + '<tr><th>EMPU Deliveries</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
+    + '<tr><th>Total Orders</th><td>'+rd.totalOrders+'</td></tr>'
+    + '<tr><th style="padding-left:22px;">Store</th><td>'+rd.storeOrders+'</td></tr>'
+    + '<tr><th style="padding-left:22px;">EMPU</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
+    + '<tr><th>Total Trolleys</th><td>'+rd.totalTrolleys+'</td></tr>'
+    + '<tr><th style="padding-left:22px;">Store</th><td>'+rd.storeTrolleys+'</td></tr>'
+    + '<tr><th style="padding-left:22px;">EMPU</th><td>'+rd.empuTrolleys+'</td></tr>'
     + '<tr><th>Total Preload</th><td>'+rd.totalPreload+'</td></tr>'
     + '<tr><th>First Zone Delivery</th><td>'+rd.firstDelivery+'</td></tr>'
     + '<tr><th>Last Zone Delivery</th><td>'+rd.lastDelivery+'</td></tr>'
@@ -5731,8 +6276,12 @@ async function drawReportPdf(doc, date, rd){
     ['ANC Supervisor Present', yesNoLabel(m.repAnc)],
     ['No. of Vans', String(rd.vans)],
     ['No. of Trucks', String(rd.trucks)],
-    ['Total Deliveries', String(rd.totalOrders)],
-    ['EMPU Deliveries', String(rd.empuOrdersIncludingConnect)],
+    ['Total Orders', String(rd.totalOrders)],
+    ['    Store', String(rd.storeOrders)],
+    ['    EMPU', String(rd.empuOrdersIncludingConnect)],
+    ['Total Trolleys', String(rd.totalTrolleys)],
+    ['    Store', String(rd.storeTrolleys)],
+    ['    EMPU', String(rd.empuTrolleys)],
     ['Total Preload', String(rd.totalPreload)],
     ['First Zone Delivery', rd.firstDelivery],
     ['Last Zone Delivery', rd.lastDelivery]
