@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.40.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.46.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -320,6 +320,12 @@
   .dropzone-text{ font-weight:700; font-size:14.5px; color:var(--ink); }
   .dropzone-subtext{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
   .zone-assign-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  /* Activity Log sub-sections */
+  .act-tabs{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 12px; margin:0 0 4px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .act-tabs::-webkit-scrollbar{ display:none; }
+  .act-tabs button{ flex:0 0 auto; border:1.5px solid var(--line); background:var(--surface); color:var(--ink-soft); font-size:14px; font-weight:700; padding:9px 14px; border-radius:999px; cursor:pointer; white-space:nowrap; font-family:inherit; }
+  .act-tabs button.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .act-tab-hidden{ display:none !important; }
   .vehicle-toggle{ display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; flex-shrink:0; }
   .vehicle-toggle button{ border:none; background:#fff; color:var(--ink-soft); font-size:12px; font-weight:600; padding:7px 10px; cursor:pointer; }
   .vehicle-toggle button + button{ border-left:1px solid var(--line); }
@@ -470,7 +476,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.40.0b</span>
+    <span class="version-tag" id="versionTagRight">3.46.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -878,7 +884,14 @@
       </label>
     </div>
 
-    <div class="card" id="activityMyStatusCard">
+    <div class="act-tabs" id="activityTabs" role="tablist" aria-label="Activity Log sections">
+      <button type="button" role="tab" data-tab="stats" class="active">Statistics</button>
+      <button type="button" role="tab" data-tab="weight">Weight &amp; Vehicles</button>
+      <button type="button" role="tab" data-tab="users">Users &amp; Logins</button>
+      <button type="button" role="tab" data-tab="data">Data &amp; Uploads</button>
+    </div>
+
+    <div class="card" id="activityMyStatusCard" data-acttab="users">
       <h2>Your activity</h2>
       <div id="activityMyStatus"></div>
     </div>
@@ -890,19 +903,19 @@
       <div id="activityMyOrderDetail" style="margin-top:14px;"></div>
     </div>
 
-    <div class="card" id="activityCoworkerCard">
+    <div class="card" id="activityCoworkerCard" data-acttab="users">
       <h2>User summary</h2>
       <div class="subtext">Login/logout times, orders in transit and trolleys delivered for the date above — all users. Delivered counts every trolley, so an order with more than one trolley counts once per trolley.</div>
       <div id="activityUserSummary"></div>
     </div>
 
-    <div class="card" id="activityScanStatsCard">
+    <div class="card" id="activityScanStatsCard" data-acttab="stats">
       <h2>Delivery statistics</h2>
       <div class="subtext">For the date above. A re-scan of an order already past that stage doesn't change its recorded status or time, but is still counted here.</div>
       <div id="activityScanStats"></div>
     </div>
 
-    <div class="card" id="activityTrendsCard">
+    <div class="card" id="activityTrendsCard" data-acttab="stats">
       <h2>Delivery trends</h2>
       <div class="subtext">The same delivery statistics as above, tracked over time.</div>
       <div class="vehicle-toggle" id="trendsPeriodToggle" style="margin-top:4px;">
@@ -914,7 +927,7 @@
       <div id="activityTrends" style="margin-top:14px;"></div>
     </div>
 
-    <div class="card" id="activityWeightByDriverCard">
+    <div class="card" id="activityWeightByDriverCard" data-acttab="weight">
       <h2>Load Weight (Kg)</h2>
       <div class="subtext">Total weight loaded per driver number, from the Weight column in the uploaded data.</div>
       <div class="vehicle-toggle" id="weightPeriodToggle" style="margin-top:4px;">
@@ -926,7 +939,7 @@
       <div id="activityWeightByDriver" style="margin-top:14px;"></div>
     </div>
 
-    <div class="card" id="activityVehicleCard">
+    <div class="card" id="activityVehicleCard" data-acttab="weight">
       <h2>No of Orders and Items for Vehicle/Drivers</h2>
       <div class="subtext">Orders and items split by Van, Truck, or not yet set, tracked over time.</div>
       <div class="vehicle-toggle" id="vehiclePeriodToggle" style="margin-top:4px;">
@@ -938,13 +951,13 @@
       <div id="activityVehicle" style="margin-top:14px;"></div>
     </div>
 
-    <div class="card" id="activityOrderDetailCard">
+    <div class="card" id="activityOrderDetailCard" data-acttab="users">
       <h2>Order detail by user</h2>
       <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it — all users.</div>
       <div id="activityOrderDetail"></div>
     </div>
 
-    <div class="card" id="activityClearScansCard" style="display:none;">
+    <div class="card" id="activityClearScansCard" data-acttab="data" style="display:none;">
       <h2>Clear scan activity</h2>
       <div class="subtext">VJ01 / master access only. Paste the order numbers whose scan activity should be wiped for a date (any text is fine — 9-digit order numbers are picked out). Each order stays on that day's manifest but goes back to pending, with who scanned/delivered it, the times and the trolley/scan counts all cleared, so it no longer shows in the Activity Log, Dashboard or reports. Preloaded orders are skipped. This can't be undone.</div>
       <label class="field" style="max-width:220px;">
@@ -960,14 +973,26 @@
       <div class="subtext" id="clearScansStatus" style="margin-top:10px; margin-bottom:0;"></div>
     </div>
 
-    <div class="card" id="activityAllCard">
+    <div class="card" id="activityChangeLogCard" data-acttab="data" style="display:none;">
+      <h2>Data change log</h2>
+      <div class="subtext">Every upload, re-upload, delete, scan clear and restore on record — who did it, when, and for which date. Blocked attempts are listed too. Most recent first.</div>
+      <div id="activityChangeLog"></div>
+      <div id="activityBackupsWrap" style="display:none; margin-top:18px;">
+        <h2 style="font-size:16px;">Safety copies</h2>
+        <div class="subtext">A copy of a date’s data is saved automatically just before it is re-uploaded, deleted or has scans cleared (the latest 40 are kept, and copies older than the 30-day retention are dropped). Restoring replaces that date’s current data with the copy — the current data is saved as a safety copy first. VJ01 / master access only.</div>
+        <div id="activityBackups"></div>
+        <div class="subtext" id="restoreStatus" style="margin-top:10px; margin-bottom:0;"></div>
+      </div>
+    </div>
+
+    <div class="card" id="activityAllCard" data-acttab="users">
       <h2>All activity</h2>
       <div id="activityLogList"></div>
     </div>
 
-    <div class="card" id="activityUploadHistoryCard">
+    <div class="card" id="activityUploadHistoryCard" data-acttab="data">
       <h2>Upload history</h2>
-      <div class="subtext">Every order-file upload on record — which date it was for, when it was uploaded, the file name, and who uploaded it. Most recent first.</div>
+      <div class="subtext">Every order-file upload on record — which date it was for, when it was uploaded, the file name, and who uploaded it. A file that is later deleted, or replaced by a re-upload, stays listed with when it was removed and by whom (tracked from this version on). Most recent first.</div>
       <div id="activityUploadHistory"></div>
     </div>
   </section>
@@ -1508,6 +1533,94 @@ async function updateDayAtomic(date, mutateFn){
     return true;
   }
 }
+
+/* ---- Data safety: change log + safety copies + overwrite guard ----
+   Anything that can wipe a day's scan data (re-upload, delete-for-date, clear
+   scan activity, restore) first saves a safety copy of that day, then writes
+   an entry to the change log saying who did what and when. Safety copies can
+   be restored from the Activity Log (VJ01 / master access). */
+const BACKUP_KEEP = 40;      // most safety copies kept (oldest dropped first)
+const AUDIT_KEEP = 500;      // most change-log entries kept
+function dayScanCounts(day){
+  const recs = (day && day.records) || [];
+  const inTransit = recs.filter(r=>r.status==='in-transit').length;
+  const delivered = recs.filter(r=>r.status==='delivered' && !r.preloaded).length;
+  return { records: recs.length, inTransit, delivered, scanned: inTransit + delivered };
+}
+// Who may replace/delete a date that already has scans: managers (including
+// team leads / load-out leader) and VJ01 / master access. Everyone else is blocked.
+function canOverwriteScannedDay(){
+  return MANAGER_CODES.includes(currentUserCode) || canClearScanData();
+}
+// Read-modify-write a JSON list safely even if two devices write at once.
+// mutateFn must be pure (a transaction may run it more than once).
+async function updateJsonListAtomic(suffix, mutateFn){
+  const key = storeKey(suffix);
+  const parse = (raw)=>{ try{ const l = raw ? JSON.parse(raw) : []; return Array.isArray(l) ? l : []; }catch(e){ return []; } };
+  if(fbReady){
+    try{
+      const r = await fbDatabase.ref(fbSafeKey(key)).transaction(cur=> JSON.stringify(mutateFn(parse(cur))));
+      return !!(r && r.committed);
+    }catch(e){ console.error('list update failed', e); return false; }
+  }
+  const raw = await storeGet(key);
+  return await storeSet(key, JSON.stringify(mutateFn(parse(raw))));
+}
+async function readJsonList(suffix){
+  const raw = await storeGet(storeKey(suffix));
+  try{ const l = raw ? JSON.parse(raw) : []; return Array.isArray(l) ? l : []; }catch(e){ return []; }
+}
+// Best-effort — never blocks the action it describes.
+async function logDataChange(action, date, detail){
+  try{
+    const entry = { ts: new Date().toISOString(), user: currentUserCode || '—', action, date: date || '', detail: detail || '' };
+    await updateJsonListAtomic('auditLog', list=> [entry].concat(list).slice(0, AUDIT_KEEP));
+  }catch(e){ console.error('audit log failed', e); }
+}
+// Saves a copy of the day's current data before it is changed. Returns
+// {ok:true, saved:bool}; ok:false means the copy could not be saved, in which
+// case the caller must NOT go ahead with the change.
+async function backupDayBeforeChange(date, reason){
+  try{
+    const raw = await storeGet(storeKey('day:'+date));
+    if(!raw) return { ok:true, saved:false, scanned:0 };      // nothing there to lose
+    let day = null; try{ day = JSON.parse(raw); }catch(e){}
+    const counts = dayScanCounts(day);
+    const ts = new Date().toISOString();
+    const id = 'backup:'+date+':'+ts;
+    const wrote = await storeSet(storeKey(id), raw);
+    if(!wrote) return { ok:false, scanned: counts.scanned };
+    const entry = { id, date, ts, reason, by: currentUserCode || '—', records: counts.records, inTransit: counts.inTransit, delivered: counts.delivered };
+    let evicted = [];
+    const listed = await updateJsonListAtomic('backups', list=>{
+      const next = [entry].concat(list);
+      evicted = next.slice(BACKUP_KEEP);
+      return next.slice(0, BACKUP_KEEP);
+    });
+    if(!listed) return { ok:false, scanned: counts.scanned };
+    for(const e of evicted){ await storeDelete(storeKey(e.id)); }
+    return { ok:true, saved:true, scanned: counts.scanned };
+  }catch(e){ console.error('backup failed', e); return { ok:false, scanned: 1 }; }
+}
+// Upload history is built from the days currently on record, so a deleted or
+// replaced file would otherwise just vanish from it. This keeps a row for it,
+// with who removed it and when. how = 'deleted' | 'replaced'. Best-effort.
+const REMOVED_UPLOADS_KEEP = 200;
+async function recordRemovedUpload(day, date, how){
+  try{
+    if(!day || !day.uploadedFileName) return;
+    const entry = { date, fileName: day.uploadedFileName, uploadedAt: day.uploadedAt || '', uploadedBy: day.uploadedBy || '—',
+                    removedAt: new Date().toISOString(), removedBy: currentUserCode || '—', how };
+    await updateJsonListAtomic('removedUploads', list=> [entry].concat(list).slice(0, REMOVED_UPLOADS_KEEP));
+  }catch(e){ console.error('removed-upload record failed', e); }
+}
+async function pruneOldBackups(cutoff){
+  const list = await readJsonList('backups');
+  const old = list.filter(e=> e.date < cutoff);
+  if(!old.length) return;
+  for(const e of old){ await storeDelete(storeKey(e.id)); }
+  await updateJsonListAtomic('backups', cur=> cur.filter(e=> e.date >= cutoff));
+}
 async function loadReportData(date){
   const raw = await storeGet(storeKey('report:'+date));
   if(!raw) return {};
@@ -1541,6 +1654,7 @@ async function cleanupOldData(){
     }
   }
   if(removedAny) await saveDatesIndex(keep);
+  try{ await pruneOldBackups(cutoff); }catch(e){ console.error('backup prune failed', e); }
 }
 
 /* ============================= UTIL ============================= */
@@ -1678,18 +1792,62 @@ function fmtDurationMinSec(ms){
 // Trolleys delivered for one delivered record, split Store/EMPU. Uses the
 // recorded trolley breakdown where it exists; older records without it count
 // as one trolley, attributed by isEmpuRecord.
-// The trolley total for an order is the highest of every signal we have
-// (in-transit scans, delivered scans, the store+EMPU breakdown, or 1) — the
-// same rule the "Multiple trolley order" table uses — so a trolley scanned
-// in transit but not yet scanned delivered, or a record whose breakdown
-// predates a later scan, is still counted. Any trolleys the Store/EMPU
+// The trolley total for an order counts DELIVERED (second) scans only — the
+// higher of the delivered-scan count and the store+EMPU breakdown, or 1. A
+// first (in-transit) scan that is never completed, e.g. one that gets reset,
+// is not a trolley, so in-transit scan counts are deliberately ignored. Any trolleys the Store/EMPU
 // breakdown doesn't account for go to whichever side the order belongs to.
 function deliveredTrolleys(r){
   const st = r.storeTrolleyCount||0, em = r.empuTrolleyCount||0;
-  const n = Math.max(r.transitScanCount||0, r.deliveredScanCount||0, st+em, 1);
+  const n = Math.max(r.deliveredScanCount||0, st+em, 1);
   const extra = n - (st+em);
   if(isEmpuRecord(r)) return { store: st, empu: em + extra };
   return { store: st + extra, empu: em };
+}
+
+// Users left out of the "time to next scan" measurement: EMPU (N codes) and
+// the managers/team leads who don't do a regular load-out run.
+// Only the main load-out run counts: anything from 7:00am (local time) on is
+// ignored, so a late-morning gap can't skew the figure.
+const NEXT_SCAN_CUTOFF_HOUR = 7;
+function nextScanCutoffMs(ms){
+  const d = new Date(ms); d.setHours(NEXT_SCAN_CUTOFF_HOUR, 0, 0, 0);
+  return d.getTime();
+}
+function isNextScanExcludedUser(code){
+  return N_CODES.includes(code) || ['M01','TL01','TL02'].includes(code);
+}
+// For one day's records: for each user, the gap from each of their delivery
+// (second) scans to their next first (in-transit) scan — i.e. how long before
+// they pick up the next trolley. A delivery with no later scan that day (the
+// user's last) has no gap and is skipped. Returns {user: [gapMs, ...]}.
+function nextScanGapsByUser(records){
+  const scans = {}, deliveries = {};
+  (records||[]).forEach(r=>{
+    if(r.scannedBy && r.inTransitAt && !isNextScanExcludedUser(r.scannedBy)){
+      (scans[r.scannedBy] = scans[r.scannedBy] || []).push(new Date(r.inTransitAt).getTime());
+    }
+    const dt = r.firstDeliveredAt || r.deliveredAt;
+    if(r.completedBy && dt && !isNextScanExcludedUser(r.completedBy)){
+      (deliveries[r.completedBy] = deliveries[r.completedBy] || []).push(new Date(dt).getTime());
+    }
+  });
+  const out = {};
+  Object.keys(deliveries).forEach(u=>{
+    const s = (scans[u]||[]).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+    deliveries[u].filter(x=>!isNaN(x)).forEach(d=>{
+      const cutoff = nextScanCutoffMs(d);
+      if(d >= cutoff) return; // delivered at/after 7:00am — outside the measured window
+      const next = s.find(x=>x > d);
+      if(next !== undefined && next < cutoff) (out[u] = out[u] || []).push(next - d);
+    });
+  });
+  return out;
+}
+// Average of each user's own average, so a high-volume user doesn't outweigh a low-volume one.
+function avgOfUserAverages(gapsByUser){
+  const avgs = Object.values(gapsByUser).filter(g=>g.length).map(g=>g.reduce((a,b)=>a+b,0)/g.length);
+  return avgs.length ? avgs.reduce((a,b)=>a+b,0)/avgs.length : null;
 }
 
 // Pure, side-effect-free: computes the delivery-statistics figures for one
@@ -1706,7 +1864,7 @@ function deliveredTrolleys(r){
 //    count as one trolley, attributed by isEmpuRecord.
 //  - avgDeliveriesPerUser: total delivered trolleys divided evenly across
 //    however many users did any delivering that day.
-//  - multiTrolleyOrders: orders scanned more than once at either stage,
+//  - multiTrolleyOrders: orders delivered (second-scanned) more than once,
 //    with how many times (trolleys) each one was scanned.
 function computeDeliveryStats(day){
   const gapsByUser = {}; // completedBy -> [gap1, gap2, ...] in ms
@@ -1732,11 +1890,11 @@ function computeDeliveryStats(day){
       if(gap >= 0){
         gapsByUser[r.completedBy] = gapsByUser[r.completedBy] || [];
         gapsByUser[r.completedBy].push(gap);
-        const trolleyCount = Math.max(r.transitScanCount||0, r.deliveredScanCount||0) || 1;
+        const trolleyCount = Math.max(r.deliveredScanCount||0, (r.storeTrolleyCount||0)+(r.empuTrolleyCount||0)) || 1;
         trolleysByUser[r.completedBy] = (trolleysByUser[r.completedBy]||0) + trolleyCount;
       }
     }
-    const multiCount = Math.max(r.transitScanCount||0, r.deliveredScanCount||0, (r.storeTrolleyCount||0)+(r.empuTrolleyCount||0));
+    const multiCount = Math.max(r.deliveredScanCount||0, (r.storeTrolleyCount||0)+(r.empuTrolleyCount||0)); // delivered scans only — an abandoned first scan isn't a trolley
     if(multiCount > 1) multiTrolleyOrders.push({ orderNo: r.orderNo, trolleys: multiCount });
   });
   const perUserAvgGaps = Object.values(gapsByUser).map(gaps => gaps.reduce((a,b)=>a+b,0)/gaps.length);
@@ -1747,8 +1905,12 @@ function computeDeliveryStats(day){
   const totalTrolleys = storeTrolleys + empuTrolleys;
   const extraTrolleys = totalTrolleys - totalDeliveries; // trolleys beyond one per delivered order
   const avgDeliveriesPerUser = deliveryCounts.length ? (totalTrolleys/deliveryCounts.length) : null;
+  const nextScanGaps = nextScanGapsByUser(day ? day.records : []);
   return {
     avgGapMs, gapUserCount: perUserAvgGaps.length, totalGapTrolleys,
+    nextScanGaps, avgNextScanMs: avgOfUserAverages(nextScanGaps),
+    nextScanUserCount: Object.keys(nextScanGaps).length,
+    nextScanCount: Object.values(nextScanGaps).reduce((a,g)=>a+g.length,0),
     avgDeliveriesPerUser, deliveryUserCount: deliveryCounts.length, totalDeliveries,
     storeDeliveries, empuDeliveries, storeTrolleys, empuTrolleys, totalTrolleys, extraTrolleys,
     multiTrolleyOrders
@@ -2202,24 +2364,33 @@ async function renderUploadHistory(){
       entries.push({ date: dates[i], uploadedAt: day.uploadedAt, fileName: day.uploadedFileName, uploadedBy: day.uploadedBy || '—' });
     }
   });
+  // Files that were deleted, or replaced by a re-upload, since this was added.
+  const removed = await readJsonList('removedUploads');
+  removed.forEach(r=> entries.push({ date: r.date, uploadedAt: r.uploadedAt, fileName: r.fileName, uploadedBy: r.uploadedBy, removedAt: r.removedAt, removedBy: r.removedBy, how: r.how }));
   if(!entries.length){
     box.innerHTML = '<div class="subtext" style="margin-bottom:0;">No upload history on record yet.</div>';
     return;
   }
-  entries.sort((a,b)=> new Date(b.uploadedAt) - new Date(a.uploadedAt));
+  const stamp = iso=>{ const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleDateString()+' '+d.toLocaleTimeString(); };
+  entries.sort((a,b)=> (new Date(b.uploadedAt)||0) - (new Date(a.uploadedAt)||0));
   const rows = entries.map(e=>{
-    const d = new Date(e.uploadedAt);
-    return '<tr><td class="mono">'+escapeHtml(e.date)+'</td>'
-      + '<td class="mono">'+d.toLocaleDateString()+' '+d.toLocaleTimeString()+'</td>'
-      + '<td class="mono">'+escapeHtml(e.fileName)+'</td>'
-      + '<td class="mono">'+escapeHtml(e.uploadedBy)+'</td></tr>';
+    const gone = !!e.removedAt;
+    const cellStyle = gone ? ' style="color:var(--ink-soft);"' : '';
+    return '<tr>'
+      + '<td class="mono"'+cellStyle+'>'+escapeHtml(e.date)+'</td>'
+      + '<td class="mono"'+cellStyle+'>'+escapeHtml(stamp(e.uploadedAt))+'</td>'
+      + '<td class="mono"'+cellStyle+'>'+escapeHtml(e.fileName)+'</td>'
+      + '<td class="mono"'+cellStyle+'>'+escapeHtml(e.uploadedBy)+'</td>'
+      + '<td class="mono">'+(gone ? '<span style="color:var(--danger); font-weight:700;">'+escapeHtml(stamp(e.removedAt))+'</span><div style="font-size:12px; color:var(--ink-soft); font-family:Inter,sans-serif; font-weight:600;">'+(e.how==='replaced' ? 'replaced by a re-upload' : 'deleted')+'</div>' : '—')+'</td>'
+      + '<td class="mono">'+(gone ? escapeHtml(e.removedBy) : '—')+'</td></tr>';
   }).join('');
-  box.innerHTML = '<table><thead><tr><th>For Date</th><th>Uploaded At</th><th>File Name</th><th>Uploaded By</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  box.innerHTML = '<div style="overflow-x:auto;"><table><thead><tr><th>For Date</th><th>Uploaded At</th><th>File Name</th><th>Uploaded By</th><th>Deleted At</th><th>Deleted By</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 async function renderActivityLog(){
   const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
   document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityTabs').style.display = isManagerView ? 'flex' : 'none';
   document.getElementById('activityMyStatusCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityCoworkerCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityScanStatsCard').style.display = isManagerView ? 'block' : 'none';
@@ -2228,6 +2399,7 @@ async function renderActivityLog(){
   document.getElementById('activityVehicleCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityOrderDetailCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityAllCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityChangeLogCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityClearScansCard').style.display = (isManagerView && canClearScanData()) ? 'block' : 'none';
   document.getElementById('activityUploadHistoryCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityMyTodayCard').style.display = isManagerView ? 'none' : 'block';
@@ -2292,7 +2464,10 @@ async function renderActivityLog(){
       : '';
     statsBox.innerHTML =
       '<div class="subtext" style="margin-bottom:6px;">Average time per user: <b>'+(stats.avgGapMs!==null ? fmtDurationMinSec(stats.avgGapMs) : '—')+'</b>'
-        + statInfoIcon('Average of each scanning user\u2019s own average gap between their first (in-transit) scan and second (delivered) scan on an order, then averaged across users so a high-volume user doesn\u2019t outweigh a low-volume one.'+(stats.gapUserCount ? ' Based on '+stats.gapUserCount+' user'+(stats.gapUserCount===1?'':'s')+'\u2019 own averages, across '+stats.totalGapTrolleys+' trolley'+(stats.totalGapTrolleys===1?'':'s')+' — an order scanned more than once at either stage counts once per scan, not once per order.' : ''))
+        + statInfoIcon('Average of each scanning user\u2019s own average gap between their first (in-transit) scan and second (delivered) scan on an order, then averaged across users so a high-volume user doesn\u2019t outweigh a low-volume one.'+(stats.gapUserCount ? ' Based on '+stats.gapUserCount+' user'+(stats.gapUserCount===1?'':'s')+'\u2019 own averages, across '+stats.totalGapTrolleys+' trolley'+(stats.totalGapTrolleys===1?'':'s')+' — an order delivered more than once counts once per trolley, not once per order.' : ''))
+      + '</div>'
+      + '<div class="subtext" style="margin-bottom:6px;">Average time to next scan: <b>'+(stats.avgNextScanMs!==null ? fmtDurationMinSec(stats.avgNextScanMs) : '—')+'</b>'
+        + statInfoIcon('How long a user takes, after delivering a trolley (second scan), to make their next first (in-transit) scan. Worked out per user, then averaged across users so a high-volume user doesn\u2019t outweigh a low-volume one. Only measured from the start of load-out until 7:00am \u2014 both the delivery and the next scan must fall before 7:00am. Excludes EMPU users, M01, TL01 and TL02. A user\u2019s last delivery has no next scan, so it isn\u2019t counted.'+(stats.nextScanUserCount ? ' Based on '+stats.nextScanUserCount+' user'+(stats.nextScanUserCount===1?'':'s')+'\u2019 own averages, across '+stats.nextScanCount+' delivery-to-scan gap'+(stats.nextScanCount===1?'':'s')+'.' : ''))
       + '</div>'
       + '<div class="subtext" style="margin-bottom:6px;">Delivery per user: <b>'+(stats.avgDeliveriesPerUser!==null ? stats.avgDeliveriesPerUser.toFixed(1) : '—')+'</b>'
         + statInfoIcon('Average number of trolleys delivered per user. Counts every trolley delivered — an order with more than one trolley counts once per trolley — divided evenly across however many users did any delivering, not weighted by how many each one handled.'+(stats.deliveryUserCount ? ' Based on '+stats.totalTrolleys+' trolley'+(stats.totalTrolleys===1?'':'s')+' across '+stats.deliveryUserCount+' user'+(stats.deliveryUserCount===1?'':'s')+'.' : ''))
@@ -2301,7 +2476,7 @@ async function renderActivityLog(){
         + statInfoIcon('Every trolley delivered for the date, split by whether it was delivered by Store or EMPU. An order with more than one trolley counts once per trolley. Here: '+stats.totalDeliveries+' orders + '+stats.extraTrolleys+' additional trolley'+(stats.extraTrolleys===1?'':'s')+' on multi-trolley orders = '+stats.totalTrolleys+'.')
       + '</div>'
       + '<div class="subtext" style="margin-bottom:0;">Multiple trolley order: <b>'+stats.multiTrolleyOrders.length+'</b>'
-        + statInfoIcon('Orders where the same order number was scanned more than once at either the in-transit or delivered stage — each extra scan usually means a separate physical trolley for that order. The table below lists each order and how many trolleys it recorded.')
+        + statInfoIcon('Orders where the same order number was delivered (second scan) more than once — each extra delivery scan means a separate physical trolley for that order. A first scan that is never completed (for example one that gets reset) doesn\u2019t count. The table below lists each order and how many trolleys it recorded.')
       + '</div>'
       + multiListHtml;
   }else{
@@ -2512,22 +2687,25 @@ async function renderDeliveryTrends(){
   const bucketStats = buckets.map(b=>{
     const merged = { records: [] };
     const perDayAvgDeliveries = [];
+    const nextScanMerged = {}; // user -> gaps across the bucket's days (computed per day, never across midnight)
     b.dates.forEach(d=>{
       const day = dayMap[d];
       if(!day || !day.records) return;
       merged.records.push(...day.records);
       const dayStats = computeDeliveryStats(day);
       if(dayStats.avgDeliveriesPerUser!==null) perDayAvgDeliveries.push(dayStats.avgDeliveriesPerUser);
+      Object.keys(dayStats.nextScanGaps).forEach(u=>{ (nextScanMerged[u] = nextScanMerged[u] || []).push(...dayStats.nextScanGaps[u]); });
     });
     // Weekly/monthly: the average of each day's own per-user figure, so a
     // week reads on the same scale as a single day instead of piling up.
     const avgDeliveriesPerUserDaily = perDayAvgDeliveries.length ? perDayAvgDeliveries.reduce((a,c)=>a+c,0)/perDayAvgDeliveries.length : null;
-    return { label: b.label, stats: computeDeliveryStats(merged), avgDeliveriesPerUserDaily };
+    return { label: b.label, stats: computeDeliveryStats(merged), avgDeliveriesPerUserDaily, avgNextScanMs: avgOfUserAverages(nextScanMerged) };
   });
 
   const labels = bucketStats.map(b=>b.label);
   container.innerHTML = (period==='ytd' ? ytdNoteHtml(selectedDate, buckets[0].dates[0]) : '') +
     renderTrendBarBlock('Average time per user', labels, bucketStats.map(b=>b.stats.avgGapMs), v=> v!=null ? fmtDurationMinSec(v) : '—')
+    + renderTrendBarBlock('Average time to next scan', labels, bucketStats.map(b=>b.avgNextScanMs), v=> v!=null ? fmtDurationMinSec(v) : '—')
     + renderTrendBarBlock('Average delivery per user', labels, bucketStats.map(b=>b.avgDeliveriesPerUserDaily), v=> v!=null ? v.toFixed(1) : '—')
     + renderTrendStackedBlock('Total orders delivered', labels, [
         { name:'Store', series: bucketStats.map(b=>b.stats.storeDeliveries) },
@@ -2700,6 +2878,8 @@ document.getElementById('clearScansBtn').addEventListener('click', async ()=>{
   );
   if(!proceed) return;
 
+  const clrBk = await backupDayBeforeChange(date, 'clear scan activity');
+  if(!clrBk.ok){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Could not save a safety copy first, so nothing was changed. Check your connection and try again.'; return; }
   let cleared = 0;
   const ok = await updateDayAtomic(date, (freshDay)=>{
     cleared = 0; // the transaction may retry — count only the final pass
@@ -2713,6 +2893,7 @@ document.getElementById('clearScansBtn').addEventListener('click', async ()=>{
   });
   if(!ok){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Could not save — nothing was changed. Check your connection and try again.'; return; }
 
+  logDataChange('clear-scans', date, 'Reset '+cleared+' record(s): '+clearable.slice(0,30).map(r=>r.orderNo).join(', ')+(clearable.length>30?' …':''));
   statusEl.style.color = 'var(--success)';
   statusEl.textContent = 'Cleared scan activity on '+cleared+' record'+(cleared===1?'':'s')+' for '+formatDDMMYYYY(date)+'.';
   document.getElementById('clearScansInput').value = '';
@@ -2724,11 +2905,92 @@ document.getElementById('clearScansBtn').addEventListener('click', async ()=>{
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 });
 
+const CHANGE_ACTION_LABELS = {
+  'upload':'Uploaded orders', 'upload-overwrite':'Re-uploaded (replaced existing data)',
+  'delete-date':'Deleted date data', 'clear-scans':'Cleared scan activity',
+  'restore':'Restored safety copy', 'blocked-upload':'Re-upload blocked', 'blocked-delete':'Delete blocked'
+};
+async function renderChangeLog(){
+  const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
+  if(!isManagerView) return;
+  const log = await readJsonList('auditLog');
+  const fmtWhen = iso=>{ const d = new Date(iso); return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); };
+  const logBox = document.getElementById('activityChangeLog');
+  logBox.innerHTML = log.length
+    ? '<div style="overflow-x:auto;"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Date</th><th>Detail</th></tr></thead><tbody>'
+      + log.slice(0,50).map(e=>'<tr><td class="mono">'+escapeHtml(fmtWhen(e.ts))+'</td><td class="mono">'+escapeHtml(e.user)+'</td><td>'+escapeHtml(CHANGE_ACTION_LABELS[e.action]||e.action)+'</td><td class="mono">'+escapeHtml(e.date?formatDDMMYYYY(e.date):'—')+'</td><td>'+escapeHtml(e.detail||'')+'</td></tr>').join('')
+      + '</tbody></table></div>'
+      + (log.length>50 ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Showing the latest 50 of '+log.length+'.</div>' : '')
+    : '<div class="subtext" style="margin-bottom:0;">Nothing logged yet — changes made from this version on will appear here.</div>';
+
+  const wrap = document.getElementById('activityBackupsWrap');
+  if(!canClearScanData()){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const backups = await readJsonList('backups');
+  document.getElementById('activityBackups').innerHTML = backups.length
+    ? '<div style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Copy saved</th><th>Reason</th><th>By</th><th>Contents</th><th></th></tr></thead><tbody>'
+      + backups.map(b=>'<tr><td class="mono">'+escapeHtml(formatDDMMYYYY(b.date))+'</td><td class="mono">'+escapeHtml(fmtWhen(b.ts))+'</td><td>'+escapeHtml(b.reason)+'</td><td class="mono">'+escapeHtml(b.by)+'</td>'
+        + '<td>'+b.records+' orders · '+b.inTransit+' in transit · '+b.delivered+' delivered</td>'
+        + '<td><button class="btn btn-ghost restore-backup-btn" data-id="'+escapeHtml(b.id)+'">Restore</button></td></tr>').join('')
+      + '</tbody></table></div>'
+    : '<div class="subtext" style="margin-bottom:0;">No safety copies yet.</div>';
+}
+document.getElementById('activityBackups').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.restore-backup-btn');
+  if(!btn || !canClearScanData()) return;
+  const statusEl = document.getElementById('restoreStatus');
+  statusEl.style.color = '';
+  const backups = await readJsonList('backups');
+  const b = backups.find(x=>x.id===btn.dataset.id);
+  if(!b){ statusEl.textContent = 'That safety copy is no longer available.'; return; }
+  const proceed = await confirmDialog(
+    'Restore safety copy',
+    '<div>Replace the current data for <b>'+escapeHtml(formatDDMMYYYY(b.date))+'</b> with the copy saved <b>'+escapeHtml(new Date(b.ts).toLocaleString())+'</b> ('+b.records+' orders, '+b.inTransit+' in transit, '+b.delivered+' delivered)?</div>'
+      + '<div style="margin-top:10px;">Anything scanned on that date since the copy was saved will be lost, so the current data is saved as a safety copy first.</div>',
+    'Restore'
+  );
+  if(!proceed) return;
+  const raw = await storeGet(storeKey(b.id));
+  if(!raw){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'The copy could not be read — nothing was changed.'; return; }
+  const bk = await backupDayBeforeChange(b.date, 'before restore');
+  if(!bk.ok){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Could not save a safety copy of the current data first, so nothing was changed.'; return; }
+  const ok = await storeSet(storeKey('day:'+b.date), raw);
+  if(!ok){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Could not save the restored data — check your connection and try again.'; return; }
+  await addDateToIndex(b.date);
+  logDataChange('restore', b.date, 'Restored the copy saved '+new Date(b.ts).toLocaleString()+' ('+b.records+' orders, '+b.inTransit+' in transit, '+b.delivered+' delivered).');
+  statusEl.style.color = 'var(--success)';
+  statusEl.textContent = 'Restored '+formatDDMMYYYY(b.date)+' from the copy saved '+new Date(b.ts).toLocaleString()+'.';
+  toast('Restored '+formatDDMMYYYY(b.date)+'.');
+  refreshActivityPage();
+  const date = b.date;
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+});
+
+let activityTab = 'stats';
+function applyActivityTab(){
+  document.querySelectorAll('#activityTabs button').forEach(b=> b.classList.toggle('active', b.dataset.tab===activityTab));
+  document.querySelectorAll('#view-activity [data-acttab]').forEach(card=>{
+    card.classList.toggle('act-tab-hidden', card.dataset.acttab !== activityTab);
+  });
+}
+document.getElementById('activityTabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-tab]');
+  if(!btn) return;
+  activityTab = btn.dataset.tab;
+  applyActivityTab();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+applyActivityTab();
+
 function refreshActivityPage(){
   renderActivityLog();
   renderDeliveryTrends();
   renderWeightByDriver();
   renderVehicleTrends();
+  renderChangeLog();
 }
 document.getElementById('activityDate').addEventListener('change', refreshActivityPage);
 
@@ -3069,14 +3331,24 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   // Re-uploading over a date that already has data wipes out everything done
   // against it so far — scans, deliveries, report status. Always confirm,
   // whether the new file is different data or a re-upload of the same file.
+  // Once scans exist, only managers / VJ01 / master access may do it, and a
+  // safety copy of the existing data is saved first.
   const existingDay = await loadDay(date);
   if(existingDay && existingDay.records && existingDay.records.length){
+    const sc = dayScanCounts(existingDay);
+    if(sc.scanned > 0 && !canOverwriteScannedDay()){
+      statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">'+formatDDMMYYYY(date)+' already has scans ('+sc.inTransit+' in transit, '+sc.delivered+' delivered). Only a manager can re-upload it now.</span>';
+      logDataChange('blocked-upload', date, 'Re-upload blocked — '+sc.inTransit+' in transit, '+sc.delivered+' delivered already on record.');
+      return;
+    }
     const proceed = await confirmDialog(
       'Re-upload will erase existing data',
       '<div><b>Data already exists for '+date+' ('+existingDay.records.length+' order(s)).</b></div>'
-        + '<div style="margin-top:10px;">Uploading now will <b>permanently erase</b> this date\u2019s existing data, '
+        + (sc.scanned > 0 ? '<div style="margin-top:10px; color:var(--danger); font-weight:700;">'+sc.inTransit+' order(s) in transit and '+sc.delivered+' delivered will be reset to pending.</div>' : '')
+        + '<div style="margin-top:10px;">Uploading now will <b>replace</b> this date\u2019s existing data, '
         + '<b>including any deliveries already scanned, in-transit statuses, and a report already generated for this date.</b></div>'
-        + '<div style="margin-top:10px;">This cannot be undone.</div>'
+        + '<div style="margin-top:10px;">A safety copy of the current data is saved first, and VJ01 can restore it from the Activity Log.</div>',
+      sc.scanned > 0 ? 'Erase and re-upload' : undefined
     );
     if(!proceed){
       statusEl.textContent = 'Upload cancelled.';
@@ -3235,12 +3507,23 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     externalReturns.forEach(r=>{ if(!r.vehicleType && vehicleHistory[r.driverNo]) r.vehicleType = vehicleHistory[r.driverNo]; });
 
     const dayObj = { date, uploadedAt: new Date().toISOString(), uploadedFileName: file.name, uploadedBy: currentUserCode, records, externalReturns, preloadOrders };
+    const bk = await backupDayBeforeChange(date, 're-upload');
+    if(!bk.ok && bk.scanned > 0){ // no scans to lose -> don't hold up a fresh upload over a failed copy
+      statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">Could not save a safety copy of the existing data for '+date+', so nothing has been changed. Check your connection and try again.</span>';
+      return;
+    }
     const saveOk = await saveDay(date, dayObj);
     if(!saveOk){
       statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">Could not save — the file was read correctly but the save to the database failed. Check your connection (or the database may be temporarily unavailable) and try again. Nothing has been saved for '+date+'.</span>';
       return;
     }
     await addDateToIndex(date);
+    {
+      const before = dayScanCounts(existingDay);
+      if(before.records) recordRemovedUpload(existingDay, date, 'replaced');
+      logDataChange(before.records ? 'upload-overwrite' : 'upload', date,
+        file.name+' — '+records.length+' order(s)'+(before.records ? '; replaced '+before.records+' existing ('+before.inTransit+' in transit, '+before.delivered+' delivered)' : ''));
+    }
     const withinRetention = date >= isoDaysAgo(RETENTION_DAYS-1);
     await cleanupOldData();
 
@@ -4277,13 +4560,26 @@ document.getElementById('clearDateBtn').addEventListener('click', async ()=>{
     return;
   }
 
+  const delCounts = dayScanCounts(day);
+  if(delCounts.scanned > 0 && !canOverwriteScannedDay()){
+    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">'+date+' already has scans ('+delCounts.inTransit+' in transit, '+delCounts.delivered+' delivered). Only a manager can delete it now.</span>';
+    logDataChange('blocked-delete', date, 'Delete blocked — '+delCounts.inTransit+' in transit, '+delCounts.delivered+' delivered on record.');
+    return;
+  }
   const hasProgress = day.records.some(r=>r.status!=='pending');
   const warning = hasProgress
     ? 'Some orders for '+date+' have already been scanned — '+day.records.filter(r=>r.status==='in-transit').length+' in transit and '+day.records.filter(r=>r.status==='delivered').length+' delivered. That progress will be permanently lost. '
     : '';
-  const ok = confirm(warning+'Delete all '+day.records.length+' order(s) and ZQR forms for '+date+'? This cannot be undone.');
+  const ok = confirm(warning+'Delete all '+day.records.length+' order(s) and ZQR forms for '+date+'? A safety copy is saved first, and VJ01 can restore it from the Activity Log.');
   if(!ok) return;
 
+  const delBk = await backupDayBeforeChange(date, 'delete');
+  if(!delBk.ok && delBk.scanned > 0){
+    statusEl.innerHTML = '<span style="color:var(--danger); font-weight:700;">Could not save a safety copy first, so nothing was deleted. Check your connection and try again.</span>';
+    return;
+  }
+  recordRemovedUpload(day, date, 'deleted');
+  logDataChange('delete-date', date, 'Deleted '+delCounts.records+' order(s) ('+delCounts.inTransit+' in transit, '+delCounts.delivered+' delivered).');
   await storeDelete(storeKey('day:'+date));
   await storeDelete(storeKey('report:'+date));
   const dates = (await loadDatesIndex()).filter(d=>d!==date);
