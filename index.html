@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.51.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.53.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -178,6 +178,7 @@
   .badge.in-transit{ background:var(--accent-soft); color:var(--accent); }
   .badge.delivered{ background:var(--success-soft); color:var(--success); }
   .badge.empu-connect{ background:#EDE4FA; color:#7B3FE4; margin-left:6px; }
+  .badge.empu-order{ background:#FCE4F0; color:#B0185F; margin-left:6px; }
 
   table{ width:100%; border-collapse:collapse; font-size:14px; }
   th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); padding:8px 8px; border-bottom:1.5px solid var(--line); }
@@ -482,7 +483,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.51.0b</span>
+    <span class="version-tag" id="versionTagRight">3.53.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -554,7 +555,7 @@
     </div>
 
     <div class="card" id="dashDriverCard" style="display:none;">
-      <h2>Driver progress</h2>
+      <h2>Delivery progress</h2>
       <div class="subtext">Target: all deliveries complete by 07:00. Bars past the line show minutes over.</div>
       <div id="dashDriverProgress"></div>
     </div>
@@ -594,7 +595,7 @@
     <div class="card">
       <h2>Zone assignment</h2>
       <div class="subtext">Assign each driver from this date's upload to a zone. Each zone can only be assigned to one driver — it disappears from the other dropdowns once taken. Saves automatically.</div>
-      <button class="btn btn-ghost" id="autoAssignZonesBtn" style="margin-bottom:12px;">Auto-assign zones by load size</button>
+      <button class="btn btn-ghost" id="autoAssignZonesBtn" style="margin-bottom:12px;">Auto-assign zones by number of orders</button>
       <div id="zoneAssignBox"></div>
 
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
@@ -955,6 +956,18 @@
       <div id="activityWeightByDriver" style="margin-top:14px;"></div>
     </div>
 
+    <div class="card" id="activityDriverOrdersCard" data-acttab="weight">
+      <h2>Orders by Driver</h2>
+      <div class="subtext">Number of orders per driver number — the measure used to auto-assign zones.</div>
+      <div class="vehicle-toggle" id="driverOrdersPeriodToggle" style="margin-top:4px;">
+        <button data-period="daily" class="active">Daily</button>
+        <button data-period="weekly">Weekly</button>
+        <button data-period="monthly">Monthly</button>
+        <button data-period="ytd">YTD</button>
+      </div>
+      <div id="activityDriverOrders" style="margin-top:14px;"></div>
+    </div>
+
     <div class="card" id="activityVehicleCard" data-acttab="weight">
       <h2>No of Orders and Items for Vehicle/Drivers</h2>
       <div class="subtext">Orders and items split by Van, Truck, or not yet set, tracked over time.</div>
@@ -976,6 +989,14 @@
     <div class="card" id="activityScanLogCard" data-acttab="users">
       <h2>Scan log</h2>
       <div class="subtext">Every scan made on the date above, by every user — co-workers, team leads, managers and EMPU — newest first. Includes re-scans, wrong-location scans and resets.</div>
+      <div id="activityScanLogFilters" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
+        <input type="text" id="slfTime" placeholder="Time" autocomplete="off" inputmode="text"/>
+        <input type="text" id="slfUser" placeholder="User" autocomplete="off"/>
+        <input type="text" id="slfOrder" placeholder="Order No." autocomplete="off" inputmode="numeric"/>
+        <input type="text" id="slfZone" placeholder="Zone" autocomplete="off"/>
+        <select id="slfScan"><option value="">All scan types</option></select>
+        <button class="btn btn-ghost" id="slfClear" type="button">Clear filters</button>
+      </div>
       <div id="activityScanLog"></div>
     </div>
 
@@ -2063,6 +2084,7 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
 });
 let dashboardInterval = null;
 let recordsInterval = null;
+let activityInterval = null;
 let reportInterval = null;
 let preloadInterval = null;
 let searchHasRun = false;
@@ -2115,6 +2137,15 @@ function showView(name){
     reportInterval = null;
   }
   if(name==='activity') refreshActivityPage();
+  // A co-worker's own activity page refreshes itself, so a scan just made
+  // appears without leaving and re-opening the tab.
+  if(name==='activity' && !(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)){
+    if(activityInterval) clearInterval(activityInterval);
+    activityInterval = setInterval(()=>{ renderMyActivityToday().catch(()=>{}); }, 5000);
+  }else if(activityInterval){
+    clearInterval(activityInterval);
+    activityInterval = null;
+  }
 }
 
 let lastKnownToday = todayISO();
@@ -2392,18 +2423,38 @@ async function renderMyActivityToday(){
   const logins = myEvents.filter(e=>e.event==='login').map(e=>e.ts).sort();
   const logouts = myEvents.filter(e=>e.event==='logout').map(e=>e.ts).sort();
 
-  const day = await loadDay(date);
+  // Everything this user scanned today — not just orders on today's manifest.
+  // A scan lands on whichever manifest date the order belongs to (the date in
+  // its QR code, or the date picked on the Forms page) and EMPU/preload scans
+  // land on the preload list, so all of those recent dates are checked and an
+  // order counts when it was scanned today by this user.
+  const idx = (await loadDatesIndex()).slice().sort();
+  const lookDates = [...new Set([date, ...idx.slice(-6)])];
+  const [dayList, preList] = await Promise.all([
+    Promise.all(lookDates.map(d=>loadDay(d))),
+    Promise.all(lookDates.map(d=>loadPreloadOrders(d)))
+  ]);
   const inTransitOrders = [];
   const deliveredOrders = [];
-  if(day){
-    day.records.forEach(r=>{
-      if(r.status==='delivered' && r.completedBy===currentUserCode){
-        deliveredOrders.push(r);
-      }else if(r.scannedBy===currentUserCode && r.status!=='delivered'){
-        inTransitOrders.push(r);
-      }
-    });
-  }
+  const consider = (r, mDate, isPre)=>{
+    const tag = { manifestDate:mDate, isPre };
+    const deliveredToday = r.deliveredAt && localDateOf(r.deliveredAt)===date;
+    const transitToday = r.inTransitAt && localDateOf(r.inTransitAt)===date;
+    // Scan history catches scans that don't change who the order belongs to —
+    // e.g. a first scan on an order someone else had already scanned.
+    const myScansToday = scanEventsOf(r).filter(e=>e.by===currentUserCode && localDateOf(e.at)===date);
+    if(r.status==='delivered' && ((r.completedBy===currentUserCode && (mDate===date || deliveredToday)) || myScansToday.some(e=>e.k==='delivered'))){
+      deliveredOrders.push(Object.assign({}, r, tag));
+    }else if(r.status!=='delivered' && ((r.scannedBy===currentUserCode && (mDate===date || transitToday)) || myScansToday.some(e=>e.k==='transit' || e.k==='rescan'))){
+      inTransitOrders.push(Object.assign({}, r, tag));
+    }
+  };
+  lookDates.forEach((d,i)=>{
+    const day = dayList[i];
+    if(day && day.records) day.records.forEach(r=>consider(r, d, false));
+    (preList[i]||[]).forEach(r=>consider(r, d, true));
+  });
+  const originTag = r=> r.isPre ? ' <span class="badge preloaded-badge">Preload</span>' : (r.manifestDate!==date ? ' <span class="subtext" style="margin:0;">('+formatDDMM(r.manifestDate)+')</span>' : '');
 
   document.getElementById('activityMyToday').innerHTML =
     '<div class="subtext" style="margin-bottom:6px;">Login: '+(logins.length ? logins.map(fmtTime).join(', ') : '—')+'</div>'
@@ -2414,10 +2465,10 @@ async function renderMyActivityToday(){
     + '</div>';
 
   const inTransitRows = inTransitOrders.length
-    ? inTransitOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.zone)+'</td></tr>').join('')
+    ? inTransitOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+originTag(r)+'</td><td>'+escapeHtml(r.zone)+'</td></tr>').join('')
     : '<tr><td colspan="2" style="text-align:center;color:#666;">None</td></tr>';
   const deliveredRows = deliveredOrders.length
-    ? deliveredOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+'</td><td>'+escapeHtml(r.zone)+'</td><td class="mono">'+(r.deliveredAt ? fmtTime(r.deliveredAt) : '—')+'</td></tr>').join('')
+    ? deliveredOrders.map(r=>'<tr><td class="mono">'+escapeHtml(r.orderNo)+originTag(r)+'</td><td>'+escapeHtml(r.zone)+'</td><td class="mono">'+(r.deliveredAt ? fmtTime(r.deliveredAt) : '—')+'</td></tr>').join('')
     : '<tr><td colspan="3" style="text-align:center;color:#666;">None</td></tr>';
 
   document.getElementById('activityMyOrderDetail').innerHTML =
@@ -2460,6 +2511,54 @@ async function renderUploadHistory(){
   box.innerHTML = '<div style="overflow-x:auto;"><table><thead><tr><th>For Date</th><th>Uploaded At</th><th>File Name</th><th>Uploaded By</th><th>Deleted At</th><th>Deleted By</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
+// Scan log (Activity Log > Users & Logins): the day's events are kept here so
+// the filters can narrow them instantly, without re-reading the database.
+let scanLogEvents = [];
+let scanLogDate = '';
+function renderScanLogTable(){
+  const scanBox = document.getElementById('activityScanLog');
+  if(!scanBox) return;
+  const sel = document.getElementById('slfScan');
+  if(sel && sel.options.length <= 1){
+    Object.keys(SCAN_KIND_LABELS).forEach(k=>{ const o = document.createElement('option'); o.value = k; o.textContent = SCAN_KIND_LABELS[k]; sel.appendChild(o); });
+  }
+  const val = id=> (document.getElementById(id)||{value:''}).value.trim().toLowerCase();
+  const fTime = val('slfTime'), fUser = val('slfUser'), fOrder = val('slfOrder'), fZone = val('slfZone');
+  const fScan = (sel||{value:''}).value;
+  const filtering = !!(fTime || fUser || fOrder || fZone || fScan);
+  const rowsAll = scanLogEvents.map(e=>Object.assign({ timeText: new Date(e.at).toLocaleTimeString() }, e));
+  const rows = rowsAll.filter(e=>
+    (!fTime || e.timeText.toLowerCase().includes(fTime)) &&
+    (!fUser || String(e.by).toLowerCase().includes(fUser)) &&
+    (!fOrder || String(e.orderNo).toLowerCase().includes(fOrder)) &&
+    (!fZone || String(e.zone||'').toLowerCase().includes(fZone)) &&
+    (!fScan || e.k===fScan));
+  if(!rowsAll.length){
+    scanBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No scans recorded for '+escapeHtml(scanLogDate)+'.</div>';
+    return;
+  }
+  if(!rows.length){
+    scanBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No scans match these filters ('+rowsAll.length+' scan'+(rowsAll.length===1?'':'s')+' on '+escapeHtml(scanLogDate)+').</div>';
+    return;
+  }
+  const shown = rows.slice(0,300);
+  const userCount = new Set(rows.map(e=>e.by)).size;
+  scanBox.innerHTML = '<div class="subtext" style="margin-bottom:8px;">'
+      + (filtering ? rows.length+' of '+rowsAll.length+' scans' : rowsAll.length+' scan'+(rowsAll.length===1?'':'s'))
+      + ' by '+userCount+' user'+(userCount===1?'':'s')+'.</div>'
+    + '<div style="overflow-x:auto;"><table><thead><tr><th>Time</th><th>User</th><th>Order No.</th><th>Zone</th><th>Scan</th></tr></thead><tbody>'
+    + shown.map(e=>'<tr><td class="mono">'+escapeHtml(e.timeText)+'</td><td class="mono">'+escapeHtml(e.by)+'</td><td class="mono">'+escapeHtml(e.orderNo)+'</td><td>'+escapeHtml(e.zone||'')+'</td><td>'+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)+(e.pre?' <span class="badge preloaded-badge">Preload</span>':'')+'</td></tr>').join('')
+    + '</tbody></table></div>'
+    + (rows.length>shown.length ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Showing the latest '+shown.length+' of '+rows.length+'.</div>' : '')
+    + '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Orders scanned before v3.51 only show their first and last scan.</div>';
+}
+['slfTime','slfUser','slfOrder','slfZone'].forEach(id=> document.getElementById(id).addEventListener('input', renderScanLogTable));
+document.getElementById('slfScan').addEventListener('change', renderScanLogTable);
+document.getElementById('slfClear').addEventListener('click', ()=>{
+  ['slfTime','slfUser','slfOrder','slfZone','slfScan'].forEach(id=>{ document.getElementById(id).value = ''; });
+  renderScanLogTable();
+});
+
 async function renderActivityLog(){
   const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
   document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
@@ -2469,6 +2568,7 @@ async function renderActivityLog(){
   document.getElementById('activityScanStatsCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityTrendsCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityWeightByDriverCard').style.display = isManagerView ? 'block' : 'none';
+  document.getElementById('activityDriverOrdersCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityVehicleCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityOrderDetailCard').style.display = isManagerView ? 'block' : 'none';
   document.getElementById('activityScanLogCard').style.display = isManagerView ? 'block' : 'none';
@@ -2623,18 +2723,9 @@ async function renderActivityLog(){
   (day ? day.records : []).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, pre:false })));
   (preOrdersForLog||[]).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, pre:true })));
   scanEvents.sort((a,b)=> b.at.localeCompare(a.at));
-  if(!scanEvents.length){
-    scanBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No scans recorded for '+date+'.</div>';
-  }else{
-    const shown = scanEvents.slice(0,300);
-    const userCount = new Set(scanEvents.map(e=>e.by)).size;
-    scanBox.innerHTML = '<div class="subtext" style="margin-bottom:8px;">'+scanEvents.length+' scan'+(scanEvents.length===1?'':'s')+' by '+userCount+' user'+(userCount===1?'':'s')+'.</div>'
-      + '<div style="overflow-x:auto;"><table><thead><tr><th>Time</th><th>User</th><th>Order No.</th><th>Zone</th><th>Scan</th></tr></thead><tbody>'
-      + shown.map(e=>'<tr><td class="mono">'+escapeHtml(new Date(e.at).toLocaleTimeString())+'</td><td class="mono">'+escapeHtml(e.by)+'</td><td class="mono">'+escapeHtml(e.orderNo)+'</td><td>'+escapeHtml(e.zone||'')+'</td><td>'+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)+(e.pre?' <span class="badge preloaded-badge">Preload</span>':'')+'</td></tr>').join('')
-      + '</tbody></table></div>'
-      + (scanEvents.length>shown.length ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Showing the latest '+shown.length+' of '+scanEvents.length+'.</div>' : '')
-      + '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Orders scanned before v3.51 only show their first and last scan.</div>';
-  }
+  scanLogEvents = scanEvents;
+  scanLogDate = date;
+  renderScanLogTable();
 
   const box = document.getElementById('activityLogList');
   if(!filtered.length){
@@ -2925,6 +3016,59 @@ document.getElementById('weightPeriodToggle').addEventListener('click', (e)=>{
   renderWeightByDriver();
 });
 
+async function renderOrdersByDriver(){
+  if(!(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)) return; // manager-only card
+  const period = (document.querySelector('#driverOrdersPeriodToggle button.active')||{}).dataset.period || 'daily';
+  const selectedDate = document.getElementById('activityDate').value || todayISO();
+  const container = document.getElementById('activityDriverOrders');
+  const buckets = await buildDateBuckets(period, selectedDate, period==='ytd' ? 12 : 1);
+  if(!buckets.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data in the retention window yet.</div>';
+    return;
+  }
+  const bucket = period==='ytd'
+    ? { label: fyLabel(selectedDate), dates: buckets.flatMap(b=>b.dates) }
+    : buckets[buckets.length-1];
+  const dayMap = {};
+  await Promise.all(bucket.dates.map(async d=>{ dayMap[d] = await loadDay(d); }));
+  const ordersByDriver = {};
+  const ordersByVehicle = { Van:0, Truck:0, Other:0 };
+  bucket.dates.forEach(d=>{
+    const day = dayMap[d];
+    if(!day || !day.records) return;
+    day.records.forEach(r=>{
+      ordersByDriver[r.driverNo] = (ordersByDriver[r.driverNo]||0) + 1;
+      ordersByVehicle[r.vehicleType==='Van'||r.vehicleType==='Truck' ? r.vehicleType : 'Other']++;
+    });
+  });
+  const driverNos = Object.keys(ordersByDriver).sort((a,b)=> ordersByDriver[b]-ordersByDriver[a] || String(a).localeCompare(String(b)));
+  if(!driverNos.length){
+    container.innerHTML = '<div class="subtext" style="margin-bottom:0;">No orders for this period.</div>';
+    return;
+  }
+  const total = ordersByVehicle.Van + ordersByVehicle.Truck + ordersByVehicle.Other;
+  const periodLabel = period==='daily' ? 'for '+formatDDMM(bucket.dates[0])
+    : period==='weekly' ? 'for the week of '+bucket.label
+    : period==='ytd' ? 'for '+bucket.label+' year to date'
+    : 'for '+bucket.label;
+  const breakdown = [['Van',ordersByVehicle.Van],['Truck',ordersByVehicle.Truck],['Not set',ordersByVehicle.Other]]
+    .filter(x=>x[1]>0).map(x=>x[0]+' '+x[1]).join(' \u00b7 ');
+  container.innerHTML = (period==='ytd' ? ytdNoteHtml(selectedDate, bucket.dates[0]) : '')
+    + '<div class="subtext" style="margin-bottom:12px;">Total Orders: <b>'+total+'</b>'
+      + (breakdown ? ' <span style="color:var(--ink-soft);">('+escapeHtml(breakdown)+')</span>' : '')
+      + statInfoIcon('Every order on the manifest for the period, by driver number. Auto-assign zones ranks drivers on this number (most orders first; equal counts go to the heavier load). Drivers with no Van/Truck set yet are included in the total and shown as Not set.')
+    + '</div>'
+    + '<div class="subtext" style="margin-bottom:10px;">Orders by driver, '+periodLabel+'.</div>'
+    + renderTrendBarBlock('Orders', driverNos, driverNos.map(dn=>ordersByDriver[dn]), v=>String(v));
+}
+document.getElementById('driverOrdersPeriodToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-period]');
+  if(!btn) return;
+  document.querySelectorAll('#driverOrdersPeriodToggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderOrdersByDriver();
+});
+
 async function renderVehicleTrends(){
   if(!(ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess)) return; // manager-only card
   const period = (document.querySelector('#vehiclePeriodToggle button.active')||{}).dataset.period || 'daily';
@@ -3131,6 +3275,7 @@ function refreshActivityPage(){
   renderActivityLog();
   renderDeliveryTrends();
   renderWeightByDriver();
+  renderOrdersByDriver();
   renderVehicleTrends();
   renderChangeLog();
 }
@@ -3745,7 +3890,9 @@ async function renderZoneAssignment(){
   const driverAutoAssigned = {}; // driverNo -> true if its zone was set by auto-assign, not manually
   const itemTotals = {}; // driverNo -> total items across their orders
   const weightTotals = {}; // driverNo -> total weight (kg) across their orders
+  const orderTotals = {}; // driverNo -> number of orders
   day.records.forEach(r=>{
+    orderTotals[r.driverNo] = (orderTotals[r.driverNo]||0) + 1;
     if(r.zone && !assignedZone[r.driverNo]) assignedZone[r.driverNo] = r.zone;
     if(r.vehicleType && !assignedVehicle[r.driverNo]) assignedVehicle[r.driverNo] = r.vehicleType;
     if(r.zoneAutoAssigned) driverAutoAssigned[r.driverNo] = true;
@@ -3794,7 +3941,7 @@ async function renderZoneAssignment(){
     const weightLabel = weightTotal ? ' · '+(Number.isInteger(weightRounded)?weightRounded:weightRounded.toFixed(1))+' kg' : '';
     const autoTag = (currentZone && driverAutoAssigned[dn]) ? ' <span class="subtext" style="margin:0; font-weight:600;">(auto)</span>' : '';
     return '<div class="zone-assign-row">'
-      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+' <span class="subtext" style="margin:0;">· '+itemCount+' items'+weightLabel+'</span>'+autoTag+'</span>'
+      + '<span class="zone-assign-driver mono">Driver '+escapeHtml(dn)+' <span class="subtext" style="margin:0;">· '+(orderTotals[dn]||0)+' orders · '+itemCount+' items'+weightLabel+'</span>'+autoTag+'</span>'
       + '<div class="vehicle-toggle" data-driver="'+escapeHtml(dn)+'">'
       + '<button data-vehicle="Van" class="'+(currentVehicle==='Van'?'active':'')+'">Van</button>'
       + '<button data-vehicle="Truck" class="'+(currentVehicle==='Truck'?'active':'')+'">Truck</button>'
@@ -3856,22 +4003,25 @@ async function onZoneAssignChange(e){
   if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
 }
 
-// Pure, side-effect-free algorithm: given each driver's total weight (kg) and
-// vehicle type, returns the zone each should get. Trucks are assigned first
-// (heaviest to lightest) from A, B, C, D, then 7, 6, 5 if there are more
-// than 4 trucks. Vans are assigned next (heaviest to lightest) from 1, 2,
-// 4, 5, 6, 7 — skipping 3 as specified — minus whatever zones trucks already
-// claimed, since trucks take priority when the two pools overlap (5, 6, 7).
-// A driver with no vehicle type set isn't in either pool and is left out.
-function computeAutoZoneAssignment(weightTotals, vehicleTypes){
+// Pure, side-effect-free algorithm: given each driver's number of orders, total
+// weight (kg, used only to break a tie in order count) and vehicle type,
+// returns the zone each should get. Trucks are assigned first (most orders to
+// fewest) from A, B, C, D, then 7, 6, 5 if there are more than 4 trucks. Vans
+// are assigned next (most orders to fewest) from 1, 2, 4, 5, 6, 7 — skipping 3
+// as specified — minus whatever zones trucks already claimed, since trucks
+// take priority when the two pools overlap (5, 6, 7). A driver with no vehicle
+// type set isn't in either pool and is left out.
+function computeAutoZoneAssignment(orderCounts, weightTotals, vehicleTypes){
   const TRUCK_ZONE_POOL = ['A','B','C','D','7','6','5'];
   const VAN_ZONE_POOL = ['1','2','4','5','6','7'];
-  const byWeightDesc = (a,b)=>{
-    const diff = (weightTotals[b]||0) - (weightTotals[a]||0);
-    return diff !== 0 ? diff : String(a).localeCompare(String(b)); // deterministic tie-break
+  const byLoadDesc = (a,b)=>{
+    const byOrders = (orderCounts[b]||0) - (orderCounts[a]||0);
+    if(byOrders !== 0) return byOrders;
+    const byWeight = (weightTotals[b]||0) - (weightTotals[a]||0); // same order count: heavier load first
+    return byWeight !== 0 ? byWeight : String(a).localeCompare(String(b)); // deterministic tie-break
   };
-  const trucks = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Truck').sort(byWeightDesc);
-  const vans = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Van').sort(byWeightDesc);
+  const trucks = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Truck').sort(byLoadDesc);
+  const vans = Object.keys(vehicleTypes).filter(dn=>vehicleTypes[dn]==='Van').sort(byLoadDesc);
 
   const assignment = {};
   const usedZones = new Set();
@@ -3895,9 +4045,11 @@ document.getElementById('autoAssignZonesBtn').addEventListener('click', async ()
   const day = await loadDay(date);
   if(!day){ toast('No data uploaded for '+date+'.'); return; }
 
+  const orderCounts = {};
   const weightTotals = {};
   const vehicleTypes = {};
   day.records.forEach(r=>{
+    orderCounts[r.driverNo] = (orderCounts[r.driverNo]||0) + 1;
     weightTotals[r.driverNo] = (weightTotals[r.driverNo]||0) + (Number(r.weight)||0);
     if(r.vehicleType && !vehicleTypes[r.driverNo]) vehicleTypes[r.driverNo] = r.vehicleType;
   });
@@ -3911,13 +4063,13 @@ document.getElementById('autoAssignZonesBtn').addEventListener('click', async ()
     return;
   }
 
-  const { assignment, unassignable } = computeAutoZoneAssignment(weightTotals, vehicleTypes);
+  const { assignment, unassignable } = computeAutoZoneAssignment(orderCounts, weightTotals, vehicleTypes);
   const truckCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Truck').length;
   const vanCount = driversWithVehicle.filter(dn=>vehicleTypes[dn]==='Van').length;
 
   const proceed = await confirmDialog(
-    'Auto-assign zones by load size',
-    '<div>This will assign zones for <b>'+truckCount+' truck(s)</b> and <b>'+vanCount+' van(s)</b> based on their total weight — heaviest first. '
+    'Auto-assign zones by number of orders',
+    '<div>This will assign zones for <b>'+truckCount+' truck(s)</b> and <b>'+vanCount+' van(s)</b> based on their number of orders — most orders first (equal order counts: heavier load first). '
       + 'Trucks get priority for zones 5, 6 and 7 where the two pools overlap.</div>'
       + '<div style="margin-top:10px;"><b>Any existing zone already assigned to a truck or van driver will be overwritten.</b></div>'
       + (unassignable.length ? '<div style="margin-top:10px; color:var(--warning); font-weight:600;">'+unassignable.length+' driver(s) won\u2019t get a zone — there aren\u2019t enough left in the pool ('+unassignable.join(', ')+').</div>' : '')
@@ -5894,6 +6046,13 @@ async function findPriorDeliveryDate(orderNo, beforeDate){
 
 let pendingRebook = null; // {orderNo, date, rec, priorDate} while awaiting Yes/No
 
+// A scan is saved in the background; if the save fails the worker must know
+// (otherwise the scan silently never appears in the Activity Log or Dashboard).
+function scanSaved(ok){
+  if(ok) return;
+  toast('Scan NOT saved \u2014 check your connection and scan again.');
+  beep(220,400,'alert');
+}
 function commitOrderScanMatch(date, rec){
   // Found in today's own upload — proceed normally. No rebook question here,
   // even if this same order number happens to have been delivered before;
@@ -5919,7 +6078,7 @@ function commitOrderScanMatch(date, rec){
           freshRec.scannedBy = scannedBy;
         }
       }
-    });
+    }).then(scanSaved);
   }else{
     // Already past pending — status/timestamp are deliberately left
     // untouched (existing behaviour), but the re-scan itself is still
@@ -5927,7 +6086,7 @@ function commitOrderScanMatch(date, rec){
     updateDayAtomic(date, (freshDay)=>{
       const freshRec = freshDay.records.find(r=>r.id===recId);
       if(freshRec){ freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1; addScanEvent(freshRec, 'rescan', currentUserCode); }
-    });
+    }).then(scanSaved);
   }
   saveInProgressScan();
 }
@@ -6116,12 +6275,12 @@ function commitPreloadScanMatch(date, rec){
           freshRec.scannedBy = currentUserCode;
         }
       }
-    });
+    }).then(scanSaved);
   }else{
     updatePreloadOrdersAtomic(date, (freshOrders)=>{
       const freshRec = freshOrders.find(r=>r.id===rec.id);
       if(freshRec){ freshRec.transitScanCount = (freshRec.transitScanCount||0) + 1; addScanEvent(freshRec, 'rescan', currentUserCode); }
-    });
+    }).then(scanSaved);
   }
 }
 
@@ -6198,9 +6357,9 @@ async function handleZqrScan(raw){
             if(!rec.firstDeliveredAt) rec.firstDeliveredAt = nowIso; // preserved for stats even if delivered again later
             rec.status='delivered'; rec.deliveredAt = nowIso; rec.completedBy = completedBy;
           }
-        });
+        }).then(scanSaved);
       }else{
-        await updateDayAtomic(savedOrder.date, (freshDay)=>{
+        const savedOk = await updateDayAtomic(savedOrder.date, (freshDay)=>{
           const freshRec = freshDay.records.find(r=>r.id===recId);
           if(freshRec){
             freshRec.deliveredScanCount = (freshRec.deliveredScanCount||0) + 1;
@@ -6213,6 +6372,7 @@ async function handleZqrScan(raw){
             freshRec.completedBy = completedBy;
           }
         });
+        scanSaved(savedOk);
         await clearInProgressScan();
       }
     })();
@@ -6406,7 +6566,7 @@ async function liveOrderLookup(){
     const refNo = multipleMatches ? extract8DigitRef(found.customerRef) : '';
     return '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
-      + (empu ? ' <span class="badge empu-connect">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
+      + (empu ? ' <span class="badge '+(empuConnect ? 'empu-connect' : 'empu-order')+'">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
       + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
       + (found.manuallyAdded ? ' <span class="badge" style="background:var(--danger); color:#fff;">Not in manifest</span>' : '')
       + (refNo ? '<div class="subtext" style="margin-top:2px; margin-bottom:0;">Ref.no <b class="mono">'+escapeHtml(refNo)+'</b></div>' : '')
@@ -6493,7 +6653,13 @@ async function runSearch(){
   const orderNoCounts = {};
   day.records.forEach(r=>{ orderNoCounts[r.orderNo] = (orderNoCounts[r.orderNo]||0) + 1; });
 
-  resultsEl.innerHTML = '<table><thead><tr><th>Order No.</th><th>Driver</th>'+(showZone?'<th>Zone</th>':'')+'<th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
+  const sumItems = results.reduce((a,r)=>a+(Number(r.items)||0),0);
+  const sumKg = Math.round(results.reduce((a,r)=>a+(Number(r.weight)||0),0)*10)/10;
+  const driverSet = new Set(results.map(r=>r.driverNo));
+  const summaryLine = '<div class="subtext" style="margin-bottom:8px;"><b>'+results.length+'</b> order'+(results.length===1?'':'s')+' · <b>'+sumItems+'</b> items'
+    + (sumKg ? ' · <b>'+(Number.isInteger(sumKg)?sumKg:sumKg.toFixed(1))+'</b> kg' : '')
+    + ' · <b>'+driverSet.size+'</b> driver'+(driverSet.size===1?'':'s')+'</div>';
+  resultsEl.innerHTML = summaryLine + '<table><thead><tr><th>Order No.</th><th>Driver</th>'+(showZone?'<th>Zone</th>':'')+'<th>Suburb</th><th>Items</th><th>Status</th></tr></thead><tbody>'
     + results.map(r=>{
       const preloadBadge = r.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(r.preloadedOn||'')+'</span>' : '';
       // Shown beside Status for every EMPU record, whichever status filter
@@ -6506,7 +6672,7 @@ async function runSearch(){
       if(isEmpuRecord(r)){
         empuLabel = isEmpuConnectRecord(r)
           ? ' <span class="badge empu-connect">Connect</span>'
-          : ' <span class="badge empu-connect">order</span>';
+          : ' <span class="badge empu-order">order</span>';
       }
       const refNo = orderNoCounts[r.orderNo] > 1 ? extract8DigitRef(r.customerRef) : '';
       const refLine = refNo ? '<div class="subtext" style="margin-top:2px;">Ref.no <b class="mono">'+escapeHtml(refNo)+'</b></div>' : '';
