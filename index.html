@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.53.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.69.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -152,6 +152,21 @@
   .subtext{ color:var(--ink-soft); font-size:13.5px; margin-bottom:14px; }
 
   label.field{ display:block; margin-bottom:14px; }
+  div.field{ margin-bottom:14px; }
+  div.field > .lbl{ display:block; font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); margin-bottom:6px; }
+  .reasons-dd{ border:1.5px solid var(--line); border-radius:8px; background:var(--card, #fff); }
+  .reasons-dd summary{ list-style:none; cursor:pointer; padding:11px 12px; font-size:15px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .reasons-dd summary::-webkit-details-marker{ display:none; }
+  .reasons-dd summary::after{ content:'\25BE'; color:var(--ink-soft); flex-shrink:0; }
+  .reasons-dd[open] summary{ border-bottom:1px solid var(--line); }
+  .reasons-dd[open] summary::after{ content:'\25B4'; }
+  .reasons-panel{ padding:4px 6px 6px; }
+  .reasons-panel label{ display:flex; align-items:center; gap:10px; padding:10px 8px; font-size:15px; cursor:pointer; border-bottom:1px solid var(--line); }
+  .reasons-panel label:last-child{ border-bottom:none; }
+  .uf-list{ border:1.5px solid var(--line); border-radius:8px; }
+  .uf-item{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); }
+  .uf-item:last-child{ border-bottom:none; }
+  .reasons-panel input[type=checkbox]{ width:20px; height:20px; flex-shrink:0; margin:0; }
   label.field .lbl{ display:block; font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); margin-bottom:6px; }
   input[type=date], input[type=text], input[type=file], input[type=time], select{
     width:100%; border:1.5px solid var(--line); border-radius:8px; padding:11px 12px;
@@ -314,13 +329,21 @@
   .report-sub{ font-weight:400; color:var(--ink-soft); font-size:12px; text-transform:none; letter-spacing:0; }
   .failed-order-chip{ display:inline-flex; align-items:center; background:var(--danger-soft); color:var(--danger); font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; padding:5px 10px; border-radius:6px; margin:3px 6px 3px 0; }
   .info-icon{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:12px; font-weight:700; font-style:italic; font-family:Georgia,serif; cursor:pointer; margin-left:7px; vertical-align:middle; user-select:none; flex-shrink:0; }
+  #repUfWrap .info-icon, #repAfWrap .info-icon{ position:static; }
+  #repUfWrap .info-popover, #repAfWrap .info-popover{ top:26px; left:0; }
   .info-icon:hover .info-popover, .info-icon.open .info-popover{ display:block; }
   .info-popover{ display:none; position:absolute; top:24px; left:0; z-index:80; background:#fff; border:1px solid var(--line); border-radius:8px; padding:11px 13px; font-size:13px; font-weight:400; font-style:normal; font-family:'Inter',sans-serif; color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.14); width:min(260px, 70vw); text-align:left; white-space:normal; text-transform:none; letter-spacing:normal; line-height:1.4; }
   .dropzone{ border:2px dashed var(--line); border-radius:10px; padding:24px 16px; text-align:center; margin-bottom:14px; transition:background .15s, border-color .15s; }
   .dropzone.dragover{ background:var(--accent-soft); border-color:var(--accent); }
   .dropzone-text{ font-weight:700; font-size:14.5px; color:var(--ink); }
   .dropzone-subtext{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
-  .zone-assign-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  /* Fixed columns so every driver's Van/Truck toggle, zone dropdown and delete button
+     sit in the same vertical line, whatever the driver label or toggle state. */
+  .zone-assign-row{ display:grid; grid-template-columns:128px minmax(0,1fr) 30px; align-items:center; column-gap:10px; row-gap:8px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .zone-assign-row .zone-assign-driver{ grid-column:1 / -1; }
+  .zone-assign-row .vehicle-toggle{ width:128px; box-sizing:border-box; }
+  .zone-assign-row .vehicle-toggle button{ flex:1 1 0; min-width:0; padding:7px 0; text-align:center; }
+  .zone-assign-row .zone-assign-select{ width:100%; min-width:0; max-width:260px; justify-self:end; }
   /* Activity Log sub-sections */
   .act-tabs{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 12px; margin:0 0 4px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .act-tabs::-webkit-scrollbar{ display:none; }
@@ -336,6 +359,9 @@
   .zone-assign-select{ width:auto; min-width:140px; padding:8px 10px; font-size:14px; }
   .zone-assign-select.unassigned{ border-color:var(--warning); background:var(--warning-soft); }
   .zone-assign-delete{ border:1px solid var(--line); background:transparent; color:var(--danger); width:30px; height:30px; border-radius:6px; font-size:14px; cursor:pointer; flex-shrink:0; }
+  .uf-edit{ border:1px solid var(--line); background:transparent; color:var(--accent); width:30px; height:30px; border-radius:6px; cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .uf-edit:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .uf-actions{ display:flex; gap:6px; flex-shrink:0; }
   .zone-assign-delete:hover{ background:var(--danger); color:#fff; border-color:var(--danger); }
   .report-issues-box{ border:1px solid #999; border-radius:4px; padding:10px 12px; font-size:13px; color:#222; min-height:24px; }
 
@@ -483,7 +509,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.53.0b</span>
+    <span class="version-tag" id="versionTagRight">3.69.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -837,7 +863,7 @@
       <h2>Manual entry</h2>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 14px;">
         <label class="field"><span class="lbl">Controller</span><input type="text" id="repController" placeholder="Name"/></label>
-        <label class="field"><span class="lbl">Load Out Hours</span>
+        <label class="field" style="display:none;"><span class="lbl">Load Out Hours</span>
           <select id="repHours">
             <option value="">Select…</option>
           </select>
@@ -855,12 +881,61 @@
         <label class="field"><span class="lbl">ANC Supervisor Present</span>
           <select id="repAnc"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
         </label>
-        <label class="field"><span class="lbl">No. of Vans</span>
-          <select id="repVansManual"><option value="">Select…</option></select>
+        <label class="field"><span class="lbl">Failed Orders</span>
+          <select id="repFailed"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
         </label>
-        <label class="field"><span class="lbl">No. of Trucks</span>
-          <select id="repTrucksManual"><option value="">Select…</option></select>
+        <div class="field" id="repUfWrap" style="position:relative; display:none; grid-column:1 / -1;">
+          <span class="lbl">Failed order no.<span class="info-icon" tabindex="0" role="button" aria-label="More info">i<div class="info-popover">Orders that went out the previous day and were brought back today. Add each one, with its reasons.</div></span></span>
+          <div style="display:flex; gap:8px; align-items:stretch;">
+            <input type="text" id="repUfOrderNo" placeholder="Order No." inputmode="numeric" autocomplete="off" style="flex:1; min-width:0;"/>
+            <button class="btn btn-ghost" id="repUfNextBtn" type="button">Next</button>
+          </div>
+          <div id="repUfStep2" style="display:none; margin-top:12px;">
+            <div class="subtext" id="repUfOrderInfo" style="margin-bottom:8px;"></div>
+            <span class="lbl">Reason (tick all that apply)</span>
+            <details class="reasons-dd" id="repReasonsDd">
+              <summary id="repReasonsSummary">Select reasons…</summary>
+              <div class="reasons-panel" id="repReasonsPanel"></div>
+            </details>
+            <div class="btn-row" style="margin-top:10px;">
+              <button class="btn btn-primary" id="repUfAddBtn" type="button">Add order</button>
+              <button class="btn btn-ghost" id="repUfCancelBtn" type="button">Cancel</button>
+              <button class="btn btn-ghost" id="repUfSaveBtn" type="button">Save</button>
+            </div>
+          </div>
+          <div id="repUfMsg" class="subtext" style="margin:8px 0 0;"></div>
+          <div id="repUfList" style="margin-top:10px;"></div>
+          <input type="hidden" id="repUnfulfilled"/>
+        </div>
+        <label class="field"><span class="lbl">All Fulfilled</span>
+          <select id="repAllFulfilled"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
         </label>
+        <div class="field" id="repAfWrap" style="position:relative; display:none; grid-column:1 / -1;">
+          <span class="lbl">Order no.<span class="info-icon" tabindex="0" role="button" aria-label="More info">i<div class="info-popover">Orders that were not fulfilled. Enter each order no., then tick why. Add as many as needed.</div></span></span>
+          <div style="display:flex; gap:8px; align-items:stretch;">
+            <input type="text" id="repAfOrderNo" placeholder="Order No." inputmode="numeric" autocomplete="off" style="flex:1; min-width:0;"/>
+            <button class="btn btn-ghost" id="repAfNextBtn" type="button">Next</button>
+          </div>
+          <div id="repAfStep2" style="display:none; margin-top:12px;">
+            <div class="subtext" id="repAfOrderInfo" style="margin-bottom:8px;"></div>
+            <span class="lbl">Reason (tick all that apply)</span>
+            <details class="reasons-dd" id="repAfDd">
+              <summary id="repAfSummary">Select reasons…</summary>
+              <div class="reasons-panel" id="repAfPanel"></div>
+            </details>
+            <input type="text" id="repAfOtherTxt" placeholder="Other \u2014 please specify" autocomplete="off" style="display:none; margin-top:8px;"/>
+            <div class="btn-row" style="margin-top:10px;">
+              <button class="btn btn-primary" id="repAfAddBtn" type="button">Add order</button>
+              <button class="btn btn-ghost" id="repAfCancelBtn" type="button">Cancel</button>
+              <button class="btn btn-ghost" id="repAfSaveBtn" type="button">Save</button>
+            </div>
+          </div>
+          <div id="repAfMsg" class="subtext" style="margin:8px 0 0;"></div>
+          <div id="repAfList" style="margin-top:10px;"></div>
+          <input type="hidden" id="repAfOrders"/>
+          <!-- legacy (pre-3.59) order-less reasons, kept so old reports still print -->
+          <input type="hidden" id="repAfReasons"/><input type="hidden" id="repAfOther"/>
+        </div>
       </div>
       <div id="reportSaveStatus" class="subtext" style="margin-top:2px;">&nbsp;</div>
     </div>
@@ -990,7 +1065,7 @@
       <h2>Scan log</h2>
       <div class="subtext">Every scan made on the date above, by every user — co-workers, team leads, managers and EMPU — newest first. Includes re-scans, wrong-location scans and resets.</div>
       <div id="activityScanLogFilters" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
-        <input type="text" id="slfTime" placeholder="Time" autocomplete="off" inputmode="text"/>
+        <input type="text" id="slfTime" placeholder="From time (e.g. 8:00)" autocomplete="off" inputmode="text"/>
         <input type="text" id="slfUser" placeholder="User" autocomplete="off"/>
         <input type="text" id="slfOrder" placeholder="Order No." autocomplete="off" inputmode="numeric"/>
         <input type="text" id="slfZone" placeholder="Zone" autocomplete="off"/>
@@ -1693,10 +1768,26 @@ async function pruneOldBackups(cutoff){
 async function loadReportData(date){
   const raw = await storeGet(storeKey('report:'+date));
   if(!raw) return {};
-  try{ return JSON.parse(raw); }catch(e){ return {}; }
+  try{
+    const d = JSON.parse(raw);
+    // Older reports (v3.55-3.56) asked "All Orders Fulfilled?" — No now reads as Failed Orders: Yes.
+    if(d && d.repFailed===undefined && (d.repFulfilled==='yes' || d.repFulfilled==='no')) d.repFailed = d.repFulfilled==='no' ? 'yes' : 'no';
+    return d;
+  }catch(e){ return {}; }
 }
 async function saveReportData(date, data){
   await storeSet(storeKey('report:'+date), JSON.stringify(data));
+  reportDataCache = {};
+}
+// Short-lived cache so the order lookup (which runs on every keystroke) isn't
+// re-reading every day's report each time.
+let reportDataCache = {};
+async function loadReportDataCached(date){
+  const c = reportDataCache[date];
+  if(c && Date.now() - c.t < 20000) return c.data;
+  const data = await loadReportData(date);
+  reportDataCache[date] = { t: Date.now(), data };
+  return data;
 }
 
 /* ---- Data retention: keep only the last RETENTION_DAYS calendar days ---- */
@@ -1876,7 +1967,7 @@ function deliveredTrolleys(r){
 
 // Users left out of the "time to next scan" measurement: the managers/team
 // leads (incl. the EMPU team lead NTL01) who don't do a regular load-out run.
-// EMPU users (N01-N06) are measured, and shown separately from Store.
+// EMPU users (N01-N07) are measured, and shown separately from Store.
 // Only the main load-out run counts: anything from 7:00am (local time) on is
 // ignored, so a late-morning gap can't skew the figure.
 const NEXT_SCAN_CUTOFF_HOUR = 7;
@@ -1891,7 +1982,7 @@ function isNextScanExcludedUser(code){
 // (second) scans to their next first (in-transit) scan — i.e. how long before
 // they pick up the next trolley. A delivery with no later scan that day (the
 // user's last) has no gap and is skipped. Returns {user: [gapMs, ...]}.
-function nextScanGapsByUser(records){
+function nextScanGapDetails(records){
   const scans = {}, deliveries = {};
   (records||[]).forEach(r=>{
     if(r.scannedBy && r.inTransitAt && !isNextScanExcludedUser(r.scannedBy)){
@@ -1899,19 +1990,32 @@ function nextScanGapsByUser(records){
     }
     const dt = r.firstDeliveredAt || r.deliveredAt;
     if(r.completedBy && dt && !isNextScanExcludedUser(r.completedBy)){
-      (deliveries[r.completedBy] = deliveries[r.completedBy] || []).push(new Date(dt).getTime());
+      (deliveries[r.completedBy] = deliveries[r.completedBy] || []).push({ t:new Date(dt).getTime(), rec:r });
     }
   });
   const out = {};
   Object.keys(deliveries).forEach(u=>{
     const s = (scans[u]||[]).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
-    deliveries[u].filter(x=>!isNaN(x)).forEach(d=>{
+    deliveries[u].filter(x=>!isNaN(x.t)).forEach(({t:d, rec:r})=>{
       const cutoff = nextScanCutoffMs(d);
       if(d >= cutoff) return; // delivered at/after 7:00am — outside the measured window
       const next = s.find(x=>x > d);
-      if(next !== undefined && next < cutoff) (out[u] = out[u] || []).push(next - d);
+      if(next !== undefined && next < cutoff){
+        // Same gap, but measured from the order's LAST delivery scan (differs from
+        // the first only on multi-trolley orders) — a diagnostic what-if.
+        const lastD = Math.max(d, r.deliveredAt ? new Date(r.deliveredAt).getTime() : d);
+        const nextLast = s.find(x=>x > lastD);
+        (out[u] = out[u] || []).push({ orderNo:r.orderNo, deliveredAt:d, nextAt:next, gap:next - d,
+          trolleys: Math.max(r.deliveredScanCount||0, (r.storeTrolleyCount||0)+(r.empuTrolleyCount||0)) || 1,
+          gapFromLast: (nextLast !== undefined && nextLast < cutoff) ? nextLast - lastD : null });
+      }
     });
   });
+  return out;
+}
+function nextScanGapsByUser(records){
+  const det = nextScanGapDetails(records), out = {};
+  Object.keys(det).forEach(u=>{ out[u] = det[u].map(x=>x.gap); });
   return out;
 }
 // Average of each user's own average, so a high-volume user doesn't outweigh a low-volume one.
@@ -1943,6 +2047,27 @@ function pickUsers(byUser, group){
 //    however many users did any delivering that day.
 //  - multiTrolleyOrders: orders delivered (second-scanned) more than once,
 //    with how many times (trolleys) each one was scanned.
+// Wrong deliveries: a wrong-location scan counts, UNLESS the next scan on that
+// same order follows in under WRONG_RESCAN_MS (an immediate correction of a
+// mis-scan, not a real wrong delivery). Counted by who made the wrong scan.
+const WRONG_RESCAN_MS = 5000;
+function wrongDeliveriesByGroup(orders){
+  let store = 0, empu = 0;
+  (orders||[]).forEach(r=>{
+    const ev = scanEventsOf(r).slice().sort((a,b)=> new Date(a.at) - new Date(b.at));
+    ev.forEach((e,i)=>{
+      if(e.k!=='wrong-zone') return;
+      const next = ev[i+1];
+      if(next && (new Date(next.at) - new Date(e.at)) < WRONG_RESCAN_MS) return; // quick rescan — not counted
+      if(userIsEmpu(e.by)) empu++; else store++;
+    });
+  });
+  return { store, empu, total: store + empu };
+}
+// Orders carried into a manifest from the previous day's preload were scanned
+// (and delivered) on the preload day, so they are left out of the manifest
+// day's statistics — they still show on the dashboard, records and scan log.
+function statRecordsOf(day){ return (day && day.records ? day.records : []).filter(r=>!r.preloaded); }
 function computeDeliveryStats(day){
   const gapsByUser = {}; // completedBy -> [gap1, gap2, ...] in ms
   const trolleysByUser = {}; // completedBy -> total trolleys behind those gaps
@@ -1951,7 +2076,7 @@ function computeDeliveryStats(day){
   const completedTrolleysByUser = {};
   let storeDeliveries = 0, empuDeliveries = 0; // delivered orders split by whether EMPU was involved
   let storeTrolleys = 0, empuTrolleys = 0;
-  (day ? day.records : []).forEach(r=>{
+  statRecordsOf(day).forEach(r=>{
     if(r.status==='delivered' && r.completedBy){
       completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + 1;
       if(isEmpuRecord(r)) empuDeliveries++; else storeDeliveries++;
@@ -1983,9 +2108,9 @@ function computeDeliveryStats(day){
   const totalTrolleys = storeTrolleys + empuTrolleys;
   const extraTrolleys = totalTrolleys - totalDeliveries; // trolleys beyond one per delivered order
   const avgDeliveriesPerUser = deliveryCounts.length ? (totalTrolleys/deliveryCounts.length) : null;
-  const nextScanGaps = nextScanGapsByUser(day ? day.records : []);
+  const nextScanGaps = nextScanGapsByUser(statRecordsOf(day));
   // Store / EMPU split of the per-user figures. A user's group is decided by
-  // their code (N01-N06 = EMPU, everyone else = Store).
+  // their code (N01-N07 = EMPU, everyone else = Store).
   const avgOf = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
   const gapAvgs = g => Object.values(pickUsers(gapsByUser,g)).map(x=>x.reduce((a,b)=>a+b,0)/x.length);
   const gapStore = gapAvgs('store'), gapEmpu = gapAvgs('empu');
@@ -2007,7 +2132,8 @@ function computeDeliveryStats(day){
     nextScanCount: Object.values(nextScanGaps).reduce((a,g)=>a+g.length,0),
     avgDeliveriesPerUser, deliveryUserCount: deliveryCounts.length, totalDeliveries,
     storeDeliveries, empuDeliveries, storeTrolleys, empuTrolleys, totalTrolleys, extraTrolleys,
-    multiTrolleyOrders
+    multiTrolleyOrders,
+    wrong: wrongDeliveriesByGroup(statRecordsOf(day))
   };
 }
 function extract8DigitRef(raw){
@@ -2393,7 +2519,7 @@ async function isMasterAccessCode(code){
 }
 
 const MANAGER_CODES = ['M01','TL01','LL01','NTL01','VJ01'];
-const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03','N04','N05','N06'];
+const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03','N04','N05','N06','N07'];
 const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
 const ACTIVITY_LOG_CODES = ['M01','TL01','NTL01','VJ01']; // LL01 is a manager but does NOT get this page
 
@@ -2515,6 +2641,17 @@ async function renderUploadHistory(){
 // the filters can narrow them instantly, without re-reading the database.
 let scanLogEvents = [];
 let scanLogDate = '';
+// The Time filter means "from this time onwards": 8:00 shows every scan at or
+// after 8:00 am. Accepts 8, 8:00, 08:30, 8.30, 8am, 8:30 pm, 20:00 (no am/pm = 24-hour).
+// Returns minutes since midnight, or null if the text isn't a time.
+function parseTimeFilter(text){
+  const m = String(text||'').trim().toLowerCase().match(/^(\d{1,2})(?:[:.](\d{0,2}))?\s*([ap])?m?$/);
+  if(!m) return null;
+  let h = Number(m[1]); const min = m[2] ? Number(m[2]) : 0;
+  if(m[3]){ if(h<1 || h>12) return null; h = (h%12) + (m[3]==='p' ? 12 : 0); }
+  if(h>23 || min>59) return null;
+  return h*60 + min;
+}
 function renderScanLogTable(){
   const scanBox = document.getElementById('activityScanLog');
   if(!scanBox) return;
@@ -2526,9 +2663,12 @@ function renderScanLogTable(){
   const fTime = val('slfTime'), fUser = val('slfUser'), fOrder = val('slfOrder'), fZone = val('slfZone');
   const fScan = (sel||{value:''}).value;
   const filtering = !!(fTime || fUser || fOrder || fZone || fScan);
+  const fromMin = fTime ? parseTimeFilter(fTime) : null;
+  const minutesOfDay = iso => { const d = new Date(iso); return d.getHours()*60 + d.getMinutes() + d.getSeconds()/60; };
   const rowsAll = scanLogEvents.map(e=>Object.assign({ timeText: new Date(e.at).toLocaleTimeString() }, e));
   const rows = rowsAll.filter(e=>
-    (!fTime || e.timeText.toLowerCase().includes(fTime)) &&
+    (fromMin===null || minutesOfDay(e.at) >= fromMin) &&
+    (fromMin!==null || !fTime || e.timeText.toLowerCase().includes(fTime)) &&
     (!fUser || String(e.by).toLowerCase().includes(fUser)) &&
     (!fOrder || String(e.orderNo).toLowerCase().includes(fOrder)) &&
     (!fZone || String(e.zone||'').toLowerCase().includes(fZone)) &&
@@ -2559,6 +2699,35 @@ document.getElementById('slfClear').addEventListener('click', ()=>{
   renderScanLogTable();
 });
 
+// Diagnostic for "Average time to next scan": every user's gaps, longest first,
+// so the users (and deliveries) pulling the average up are easy to see.
+function nextScanBreakdownHtml(records){
+  const det = nextScanGapDetails(records);
+  const users = Object.keys(det);
+  if(!users.length) return '';
+  const dur = v => v!==null && v!==undefined ? fmtDurationMinSec(v) : '\u2014';
+  const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+  const median = a => { if(!a.length) return null; const b=a.slice().sort((x,y)=>x-y), m=Math.floor(b.length/2); return b.length%2 ? b[m] : (b[m-1]+b[m])/2; };
+  const tm = ms => new Date(ms).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+  const rows = users.map(u=>{
+    const g = det[u], gaps = g.map(x=>x.gap), lasts = g.map(x=>x.gapFromLast).filter(x=>x!==null);
+    return { u, g, n:gaps.length, avg:avg(gaps), med:median(gaps), max:Math.max(...gaps), multi:g.filter(x=>x.trolleys>1).length, avgLast:avg(lasts) };
+  }).sort((a,b)=>b.avg-a.avg);
+  const userAvgs = rows.map(r=>r.avg), userAvgsLast = rows.map(r=>r.avgLast).filter(x=>x!==null);
+  const headline = '<div class="subtext" style="margin:6px 0 10px;">Average of user averages: <b>'+dur(avg(userAvgs))+'</b>'
+    + ' \u00b7 if measured from the <i>last</i> delivery scan of each order: <b>'+dur(avg(userAvgsLast))+'</b></div>';
+  const blocks = rows.map(r=>
+    '<details style="border-top:1px solid var(--line); padding:6px 0;"><summary style="cursor:pointer; font-size:14px;">'
+    + '<b class="mono">'+escapeHtml(r.u)+'</b> <span class="subtext" style="margin:0;">'+(userIsEmpu(r.u)?'EMPU':'Store')+' \u00b7 '+r.n+' gap'+(r.n===1?'':'s')
+    + ' \u00b7 avg <b>'+dur(r.avg)+'</b> \u00b7 median '+dur(r.med)+' \u00b7 longest '+dur(r.max)
+    + (r.multi ? ' \u00b7 '+r.multi+' after multi-trolley' : '')+'</span></summary>'
+    + '<div style="overflow-x:auto;"><table style="width:100%; margin:6px 0 0;"><thead><tr><th>Order</th><th>Delivered</th><th>Next scan</th><th style="text-align:right;">Gap</th></tr></thead><tbody>'
+    + r.g.slice().sort((a,b)=>b.gap-a.gap).map(x=>'<tr><td class="mono">'+escapeHtml(x.orderNo)+(x.trolleys>1?' <span class="badge" style="background:var(--warning); color:#fff;">'+x.trolleys+' trolleys</span>':'')+'</td>'
+        + '<td class="mono">'+tm(x.deliveredAt)+'</td><td class="mono">'+tm(x.nextAt)+'</td><td style="text-align:right; white-space:nowrap;">'+dur(x.gap)+'</td></tr>').join('')
+    + '</tbody></table></div></details>').join('');
+  return '<details style="margin-top:12px;"><summary style="cursor:pointer; font-weight:700;">Next-scan gaps by user</summary>'
+    + headline + '<div class="subtext" style="margin:0 0 6px;">Highest average first. Tap a user for each delivery\u2019s gap, longest first.</div>' + blocks + '</details>';
+}
 async function renderActivityLog(){
   const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
   document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
@@ -2613,7 +2782,7 @@ async function renderActivityLog(){
   const completedCounts = {};
   const pendingCounts = {};
   if(day){
-    day.records.forEach(r=>{
+    statRecordsOf(day).forEach(r=>{
       if(r.status==='delivered' && r.completedBy){
         // Trolleys, not orders: an order with several trolleys counts once per trolley.
         const t = deliveredTrolleys(r);
@@ -2660,7 +2829,11 @@ async function renderActivityLog(){
       + statRow('Multiple trolley order',
           'Orders where the same order number was delivered (second scan) more than once — each extra delivery scan means a separate physical trolley for that order. An order is shown under EMPU if EMPU was involved in delivering it, otherwise Store. A first scan that is never completed (for example one that gets reset) doesn’t count. The table below lists each order and how many trolleys it recorded.',
           stats.multiStore, stats.multiEmpu, stats.multiTrolleyOrders.length)
+      + statRow('Wrong deliveries',
+          'Wrong-location scans (the ZQR scanned did not match the order’s zone). Counted under the user who made the scan. A wrong scan is NOT counted if the next scan of that same order comes less than 5 seconds later — that is treated as an immediate correction, not a wrong delivery. A wrong scan that is corrected after 5 seconds or more, or never corrected, is counted.',
+          stats.wrong.store, stats.wrong.empu, stats.wrong.total)
       + '</tbody></table></div>'
+      + nextScanBreakdownHtml(statRecordsOf(day))
       + multiListHtml;
   }else{
     statsBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No data uploaded for this date.</div>';
@@ -2696,7 +2869,7 @@ async function renderActivityLog(){
   const detailBox = document.getElementById('activityOrderDetail');
   const detailRows = [];
   if(day){
-    day.records.forEach(r=>{
+    statRecordsOf(day).forEach(r=>{
       if(r.status==='delivered' && r.completedBy){
         detailRows.push({ user:r.completedBy, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: r.deliveredAt ? fmtTime(r.deliveredAt) : '—' });
       }else if(r.scannedBy && r.status!=='delivered'){
@@ -4362,10 +4535,22 @@ async function loadPreloadOrders(date){
   if(!raw) return [];
   try{ return JSON.parse(raw); }catch(e){ return []; }
 }
+// Short-lived cache so the order lookup (every keystroke) isn't re-reading ~30
+// preload lists each time; cleared whenever a preload list is written.
+let preloadListCache = {};
+async function loadPreloadOrdersCached(date){
+  const c = preloadListCache[date];
+  if(c && Date.now() - c.t < 20000) return c.data;
+  const data = await loadPreloadOrders(date);
+  preloadListCache[date] = { t: Date.now(), data };
+  return data;
+}
 async function savePreloadOrders(date, arr){
+  preloadListCache = {};
   await storeSet(storeKey('preload:'+date+':orders'), JSON.stringify(arr));
 }
 async function updatePreloadOrdersAtomic(date, mutateFn){
+  preloadListCache = {};
   if(fbReady){
     try{
       const result = await fbDatabase.ref(fbSafeKey(storeKey('preload:'+date+':orders'))).transaction((currentRaw)=>{
@@ -6490,7 +6675,7 @@ document.getElementById('recordsDate').addEventListener('change', ()=>{
   if(searchHasRun) runSearch();
 });
 
-const N_CODES = ['N01','N02','N03','N04','N05','N06','NTL01'];
+const N_CODES = ['N01','N02','N03','N04','N05','N06','N07','NTL01'];
 function scannerOfRecord(r){
   return r.completedBy || r.scannedBy || null;
 }
@@ -6521,12 +6706,25 @@ function isEmpuRecord(record){
 //     instead.
 // An EMPU record with none of these signals has no evidence of a separate
 // store touch, and is simply an "order".
+// Signal 3 on its own can't tell WHO scanned twice: an EMPU user scanning the
+// same order twice (a double scan) looks identical to a store re-scan. So
+// where the order has a scan history (v3.51+), the history decides — Connect
+// only if a non-EMPU user actually scanned it. The scan counts are only used
+// for scans that predate the history, or for orders with no history at all.
 function isEmpuConnectRecord(record){
   if(!isEmpuRecord(record)) return false;
   const bothTrolleyTypes = (record.storeTrolleyCount||0) > 0 && (record.empuTrolleyCount||0) > 0;
   const handoff = record.scannedBy && !N_CODES.includes(record.scannedBy);
+  if(bothTrolleyTypes || handoff) return true;
   const multiScanned = (record.transitScanCount||0) > 1 || (record.deliveredScanCount||0) > 1;
-  return bothTrolleyTypes || !!handoff || multiScanned;
+  const log = Array.isArray(record.scanLog) ? record.scanLog.filter(e=>e && e.by) : [];
+  if(!log.length) return multiScanned;
+  const SCANS = ['transit','rescan','delivered'];
+  if(log.some(e=>SCANS.includes(e.k) && !N_CODES.includes(e.by))) return true; // a store user scanned it
+  const loggedTransit = log.filter(e=>e.k==='transit' || e.k==='rescan').length;
+  const loggedDelivered = log.filter(e=>e.k==='delivered').length;
+  const someScansPredateLog = (record.transitScanCount||0) > loggedTransit || (record.deliveredScanCount||0) > loggedDelivered;
+  return someScansPredateLog && multiScanned;
 }
 
 async function liveOrderLookup(){
@@ -6550,14 +6748,72 @@ async function liveOrderLookup(){
     found.forEach(f => matches.push(Object.assign({}, f, {date: dates[i]})));
   });
 
-  if(!matches.length){
+  // Preload lists are keyed by the day the preload was done and often hold orders
+  // that aren't on any manifest yet, so every recent preload day is checked too.
+  // Orders already carried into a manifest (rec.preloaded) show on that manifest
+  // card, with their scan history, so they aren't listed a second time.
+  // Plain calendar arithmetic (no time-zone shift) — tomorrow back through the retention window.
+  const [ty,tm,td] = todayISO().split('-').map(Number);
+  const preDates = []; for(let i=-1; i<=RETENTION_DAYS; i++) preDates.push(new Date(Date.UTC(ty, tm-1, td-i)).toISOString().slice(0,10));
+  const preLists = await Promise.all(preDates.map(d=>loadPreloadOrdersCached(d)));
+  if(myToken !== liveOrderLookupToken) return;
+  preDates.forEach((d,i)=>{
+    (preLists[i]||[]).filter(r=>r.orderNo===val).forEach(r=>{
+      const integrated = matches.some(m=>m.preloaded && m.preloadedOn===d);
+      if(!integrated) matches.push(Object.assign({}, r, { date:d, preloadOnly:true }));
+    });
+  });
+
+  // Failed orders (went out the day before, came back) are recorded on the
+  // daily report of the day they came back — and are not on that day's
+  // manifest — so every day's report is checked for this order number.
+  const vkey = extractOrderNoFromScan(val);
+  const reportDates = [...new Set([...dates, todayISO()])].sort().reverse();
+  const reportsList = await Promise.all(reportDates.map(d=>loadReportDataCached(d)));
+  if(myToken !== liveOrderLookupToken) return;
+  const failedHits = [];
+  reportDates.forEach((d,i)=>{
+    const r = reportsList[i] || {};
+    if(r.repFailed!=='yes') return;
+    parseUnfulfilled(r.repUnfulfilled).forEach(u=>{ if(u.orderNo===vkey) failedHits.push(Object.assign({ returnedOn:d }, u)); });
+  });
+  // "All Fulfilled = No" orders (not fulfilled, with their reasons) — amber, to tell them from red failed orders.
+  const afHits = [];
+  reportDates.forEach((d,i)=>{
+    const r = reportsList[i] || {};
+    if(r.repAllFulfilled!=='no') return;
+    parseAfOrders(r.repAfOrders).forEach(u=>{ if(u.orderNo===vkey) afHits.push(Object.assign({ reportDate:d }, u)); });
+  });
+  const afHtml = afHits.map(h=>
+    '<div style="margin-top:14px; border:1.5px solid var(--warning); background:var(--warning-soft); border-radius:8px; padding:14px 16px;">'
+    + '<div style="color:var(--warning); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--warning); color:#fff; margin-left:6px;">Not fulfilled</span></div>'
+    + '<div style="color:var(--warning); font-size:14px;">Reported <b>'+escapeHtml(formatDDMMYYYY(h.reportDate))+'</b></div>'
+    + ((h.driverNo || h.zone || h.suburb) ? '<div style="color:var(--warning); font-size:14px; margin-top:4px;">'
+        + (h.driverNo ? 'Driver <b class="mono">'+escapeHtml(h.driverNo)+'</b>' : '')
+        + (h.zone ? ' \u00b7 Zone <b class="mono">'+escapeHtml(h.zone)+'</b>' : '')
+        + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
+    + '<div style="color:var(--warning); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(afReasonsLabel(h.reasons, h.other))+'</b></div>'
+    + '</div>').join('');
+  const failedHtml = failedHits.map(h=>
+    '<div style="margin-top:14px; border:1.5px solid var(--danger); background:var(--danger-soft); border-radius:8px; padding:14px 16px;">'
+    + '<div style="color:var(--danger); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--danger); color:#fff; margin-left:6px;">Failed order</span></div>'
+    + '<div style="color:var(--danger); font-size:14px;">Brought back <b>'+escapeHtml(formatDDMMYYYY(h.returnedOn))+'</b>'
+      + (h.wentOut ? ' \u00b7 went out <b>'+escapeHtml(formatDDMM(h.wentOut))+'</b>' : '') + '</div>'
+    + ((h.driverNo || h.zone || h.suburb) ? '<div style="color:var(--danger); font-size:14px; margin-top:4px;">'
+        + (h.driverNo ? 'Driver <b class="mono">'+escapeHtml(h.driverNo)+'</b>' : '')
+        + (h.zone ? ' \u00b7 Zone <b class="mono">'+escapeHtml(h.zone)+'</b>' : '')
+        + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
+    + '<div style="color:var(--danger); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(reasonsText(h.reasons))+'</b></div>'
+    + '</div>').join('');
+
+  if(!matches.length && !failedHits.length && !afHits.length){
     resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">No order matching "'+escapeHtml(val)+'" found in the last '+RETENTION_DAYS+' days.</div>';
     return;
   }
   matches.sort((a,b)=> b.date.localeCompare(a.date)); // most recent first
 
   const multipleMatches = matches.length > 1;
-  resultEl.innerHTML = matches.map(found=>{
+  resultEl.innerHTML = failedHtml + afHtml + matches.map(found=>{
     const empu = isEmpuRecord(found);
     const empuConnect = isEmpuConnectRecord(found);
     const trolleyCount = found.deliveredScanCount||0;
@@ -6567,8 +6823,10 @@ async function liveOrderLookup(){
     return '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
       + (empu ? ' <span class="badge '+(empuConnect ? 'empu-connect' : 'empu-order')+'">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
-      + (found.preloaded ? ' <span class="badge preloaded-badge">Preloaded '+escapeHtml(found.preloadedOn||'')+'</span>' : '')
+      + (found.preloadOnly ? ' <span class="badge preloaded-badge">Preloaded on '+escapeHtml(formatDDMMYYYY(found.date))+'</span>'
+        : found.preloaded ? ' <span class="badge preloaded-badge">Preloaded on '+escapeHtml(found.preloadedOn ? formatDDMMYYYY(found.preloadedOn) : '')+'</span>' : '')
       + (found.manuallyAdded ? ' <span class="badge" style="background:var(--danger); color:#fff;">Not in manifest</span>' : '')
+      + (found.preloadOnly ? '<div class="subtext" style="margin-top:2px; margin-bottom:0;">Preload list \u2014 not on a manifest yet</div>' : '')
       + (refNo ? '<div class="subtext" style="margin-top:2px; margin-bottom:0;">Ref.no <b class="mono">'+escapeHtml(refNo)+'</b></div>' : '')
       + '</div>'
       + '<div class="meta-row" style="display:flex; flex-wrap:wrap; gap:18px; font-size:14px;">'
@@ -6737,7 +6995,303 @@ document.getElementById('preloadSearchClearBtn').addEventListener('click', ()=>{
 
 /* ============================= REPORT ============================= */
 const REPORT_FAILED_HOUR = 10; // 10:00am cutoff for the report's "failed delivery" figure
-const REPORT_MANUAL_FIELDS = ['repController','repHours','repLastVehicle','repTent','repTmp','repTrolleys','repAnc','repVansManual','repTrucksManual','repOtherIssues'];
+const REPORT_MANUAL_FIELDS = ['repController','repHours','repLastVehicle','repTent','repTmp','repTrolleys','repAnc','repFailed','repUnfulfilled','repAllFulfilled','repAfOrders','repAfReasons','repAfOther','repOtherIssues'];
+
+// "Failed Orders" — when Yes, the failed order(s) are
+// entered first (order no. — went out on an earlier day, so not checked against today's manifest), then
+// the reasons for each are ticked. Kept as a JSON list in the hidden
+// repUnfulfilled field: [{orderNo, reasons:[...]}].
+const FULFIL_REASONS = ['Not at home','Business closed','No/poor access','Customer refused/cancelled','Delivery incomplete','Delivery rescheduled','TSP failed'];
+function parseUnfulfilled(v){
+  try{
+    const l = JSON.parse(v||'[]');
+    return Array.isArray(l) ? l.filter(x=>x && x.orderNo).map(x=>({ orderNo:String(x.orderNo), reasons:(x.reasons||[]).filter(r=>FULFIL_REASONS.includes(r)),
+      wentOut:x.wentOut||'', driverNo:x.driverNo||'', zone:x.zone||'', suburb:x.suburb||'' })) : [];
+  }catch(e){ return []; }
+}
+function reasonsText(list){ return (list && list.length) ? list.join(', ') : '\u2014'; }
+(function buildReasonsPanel(){
+  document.getElementById('repReasonsPanel').innerHTML = FULFIL_REASONS.map(r=>
+    '<label><input type="checkbox" value="'+r+'"/><span>'+r+'</span></label>').join('');
+})();
+let ufPendingOrder = null; // order awaiting its reasons
+function ufTicked(){ return [...document.querySelectorAll('#repReasonsPanel input[type=checkbox]')].filter(cb=>cb.checked).map(cb=>cb.value); }
+function ufSyncSummary(){
+  const t = ufTicked();
+  document.getElementById('repReasonsSummary').textContent = t.length ? t.join(', ') : 'Select reasons\u2026';
+}
+let ufEditIdx = -1; // index of the order being edited (-1 = adding a new one)
+function ufResetStep(){
+  ufPendingOrder = null; ufPendingInfo = null; ufEditIdx = -1;
+  document.getElementById('repUfAddBtn').textContent = 'Add order';
+  document.getElementById('repUfStep2').style.display = 'none';
+  document.querySelectorAll('#repReasonsPanel input[type=checkbox]').forEach(cb=>{ cb.checked = false; });
+  document.getElementById('repReasonsDd').open = false;
+  ufSyncSummary();
+}
+function renderUfList(){
+  const list = parseUnfulfilled(document.getElementById('repUnfulfilled').value);
+  document.getElementById('repUfList').innerHTML = list.length
+    ? '<div class="uf-list">'+list.map((u,i)=>'<div class="uf-item"><div><b class="mono">'+escapeHtml(u.orderNo)+'</b><div class="subtext" style="margin:2px 0 0;">'+escapeHtml(reasonsText(u.reasons))+'</div></div>'
+        + '<div class="uf-actions"><button type="button" class="uf-edit" data-uf-edit="'+i+'" title="Edit" aria-label="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button type="button" class="zone-assign-delete" data-uf-del="'+i+'" title="Remove" aria-label="Remove">\u2715</button></div></div>').join('')+'</div>'
+    : '';
+}
+function syncFulfilUI(){
+  document.getElementById('repUfWrap').style.display = document.getElementById('repFailed').value === 'yes' ? 'block' : 'none';
+  ufResetStep();
+  document.getElementById('repUfMsg').textContent = '';
+  document.getElementById('repUfOrderNo').value = '';
+  renderUfList();
+}
+// "All Fulfilled" — when No: enter each order no., then tick why (Other asks for
+// the detail); add as many orders as needed. Stored as a JSON list in the hidden
+// repAfOrders field: [{orderNo, reasons:[...], other, driverNo, zone, suburb}].
+const AF_REASONS = ['Not in Manifest','Missed Order','Vehicle not assigned','P11 error','Not palletised','Other'];
+function afList(v){ return String(v||'').split('|').filter(x=>AF_REASONS.includes(x)); }
+function parseAfOrders(v){
+  try{
+    const l = JSON.parse(v||'[]');
+    return Array.isArray(l) ? l.filter(x=>x && x.orderNo).map(x=>({ orderNo:String(x.orderNo), reasons:(x.reasons||[]).filter(r=>AF_REASONS.includes(r)),
+      other:x.other||'', driverNo:x.driverNo||'', zone:x.zone||'', suburb:x.suburb||'' })) : [];
+  }catch(e){ return []; }
+}
+function afReasonsLabel(reasons, other){
+  const l = (reasons||[]).map(r=> r==='Other' ? 'Other'+(other && other.trim() ? ' ('+other.trim()+')' : '') : r);
+  return l.length ? l.join(', ') : '—';
+}
+// Older reports stored one order-less reason list; still shown if there are no orders.
+function afText(reasons, other){ return afReasonsLabel(afList(reasons), other); }
+function afOrdersText(ordersJson, reasons, other){
+  const l = parseAfOrders(ordersJson);
+  return l.length ? l.map(o=>o.orderNo+' — '+afReasonsLabel(o.reasons, o.other)).join('; ') : afText(reasons, other);
+}
+(function buildAfPanel(){
+  document.getElementById('repAfPanel').innerHTML = AF_REASONS.map(r=>
+    '<label><input type="checkbox" value="'+r+'"/><span>'+(r==='Other' ? 'Other (specify)' : r)+'</span></label>').join('');
+})();
+let afPendingOrder = null, afPendingInfo = null;
+function afTicked(){ return [...document.querySelectorAll('#repAfPanel input[type=checkbox]')].filter(cb=>cb.checked).map(cb=>cb.value); }
+function afSyncSummary(){
+  const t = afTicked();
+  document.getElementById('repAfSummary').textContent = t.length ? t.map(r=>r==='Other'?'Other (specify)':r).join(', ') : 'Select reasons…';
+  document.getElementById('repAfOtherTxt').style.display = t.includes('Other') ? 'block' : 'none';
+}
+let afEditIdx = -1;
+function afResetStep(){
+  afPendingOrder = null; afPendingInfo = null; afEditIdx = -1;
+  document.getElementById('repAfAddBtn').textContent = 'Add order';
+  document.getElementById('repAfStep2').style.display = 'none';
+  document.querySelectorAll('#repAfPanel input[type=checkbox]').forEach(cb=>{ cb.checked = false; });
+  document.getElementById('repAfOtherTxt').value = '';
+  document.getElementById('repAfDd').open = false;
+  afSyncSummary();
+}
+function renderAfList(){
+  const list = parseAfOrders(document.getElementById('repAfOrders').value);
+  document.getElementById('repAfList').innerHTML = list.length
+    ? '<div class="uf-list">'+list.map((u,i)=>'<div class="uf-item"><div><b class="mono">'+escapeHtml(u.orderNo)+'</b><div class="subtext" style="margin:2px 0 0;">'+escapeHtml(afReasonsLabel(u.reasons, u.other))+'</div></div>'
+        + '<div class="uf-actions"><button type="button" class="uf-edit" data-af-edit="'+i+'" title="Edit" aria-label="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button type="button" class="zone-assign-delete" data-af-del="'+i+'" title="Remove" aria-label="Remove">\u2715</button></div></div>').join('')+'</div>'
+    : '';
+}
+function syncAfUI(){
+  document.getElementById('repAfWrap').style.display = document.getElementById('repAllFulfilled').value === 'no' ? 'block' : 'none';
+  afResetStep();
+  document.getElementById('repAfMsg').textContent = '';
+  document.getElementById('repAfOrderNo').value = '';
+  renderAfList();
+}
+async function afNext(){
+  const msg = document.getElementById('repAfMsg');
+  const orderNo = extractOrderNoFromScan(document.getElementById('repAfOrderNo').value.trim());
+  msg.style.color = '';
+  if(!orderNo){ msg.textContent = 'Enter the order no. first.'; return; }
+  if(parseAfOrders(document.getElementById('repAfOrders').value).some(u=>u.orderNo===orderNo)){
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Order '+orderNo+' is already in the list below.'; return;
+  }
+  msg.textContent = '';
+  // Show who had it if it is on the report date's manifest — never blocks (e.g. "Not in Manifest").
+  const date = document.getElementById('reportDate').value || todayISO();
+  const day = await loadDay(date);
+  const rec = day && day.records.find(r=>r.orderNo===orderNo);
+  afPendingOrder = orderNo;
+  afPendingInfo = rec ? { driverNo:rec.driverNo||'', zone:rec.zone||'', suburb:rec.suburb||'' } : null;
+  document.getElementById('repAfOrderInfo').innerHTML = 'Order <b class="mono">'+escapeHtml(orderNo)+'</b>'
+    + (rec ? ' · Driver '+escapeHtml(rec.driverNo||'')+' · '+escapeHtml(rec.suburb||'') : ' · not on this date’s manifest (it will still be recorded)')
+    + ' — why was it not fulfilled?';
+  document.getElementById('repAfStep2').style.display = 'block';
+  document.getElementById('repAfDd').open = true;
+}
+document.getElementById('repAllFulfilled').addEventListener('change', ()=>{ syncAfUI(); saveReportManualFields(); });
+document.getElementById('repAfNextBtn').addEventListener('click', afNext);
+document.getElementById('repAfOrderNo').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); afNext(); } });
+document.getElementById('repAfOrderNo').addEventListener('input', ()=>{ if(afPendingOrder) afResetStep(); });
+document.getElementById('repAfPanel').addEventListener('change', afSyncSummary);
+document.getElementById('repAfCancelBtn').addEventListener('click', ()=>{ afResetStep(); document.getElementById('repAfOrderNo').value = ''; });
+function afAdd(){
+  const msg = document.getElementById('repAfMsg');
+  const reasons = afTicked();
+  if(!afPendingOrder){ msg.textContent = 'Enter the order no. and press Next first.'; return false; }
+  if(!reasons.length){ msg.style.color = 'var(--danger)'; msg.textContent = 'Tick at least one reason.'; return false; }
+  const other = document.getElementById('repAfOtherTxt').value.trim();
+  if(reasons.includes('Other') && !other){ msg.style.color = 'var(--danger)'; msg.textContent = 'Please specify the "Other" reason.'; return false; }
+  const list = parseAfOrders(document.getElementById('repAfOrders').value);
+  const entry = Object.assign({ orderNo: afPendingOrder, reasons, other: reasons.includes('Other') ? other : '' }, afPendingInfo || {});
+  if(afEditIdx >= 0 && afEditIdx < list.length) list[afEditIdx] = entry; else list.push(entry);
+  document.getElementById('repAfOrders').value = JSON.stringify(list);
+  document.getElementById('repAfOrderNo').value = '';
+  msg.textContent = '';
+  afResetStep();
+  renderAfList();
+  saveReportManualFields();
+  return true;
+}
+document.getElementById('repAfAddBtn').addEventListener('click', afAdd);
+
+async function afSave(){
+  const msg = document.getElementById('repAfMsg');
+  if(afPendingOrder){ if(!afAdd()) return; }
+  else if(document.getElementById('repAfOrderNo').value.trim()){
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Press Next and tick the reasons, then Save \u2014 or clear the order no.'; return;
+  }
+  await saveReportManualFields();
+  const n = parseAfOrders(document.getElementById('repAfOrders').value).length;
+  msg.style.color = 'var(--success)'; msg.textContent = 'Saved \u2014 '+n+' order'+(n===1?'':'s')+' recorded.';
+  toast('Orders saved');
+}
+document.getElementById('repAfSaveBtn').addEventListener('click', afSave);
+function afStartEdit(i){
+  const u = parseAfOrders(document.getElementById('repAfOrders').value)[i];
+  if(!u) return;
+  afResetStep();
+  afEditIdx = i; afPendingOrder = u.orderNo;
+  afPendingInfo = { driverNo:u.driverNo, zone:u.zone, suburb:u.suburb };
+  document.getElementById('repAfOrderNo').value = u.orderNo;
+  document.getElementById('repAfMsg').textContent = '';
+  document.getElementById('repAfOrderInfo').innerHTML = 'Editing order <b class="mono">'+escapeHtml(u.orderNo)+'</b>'
+    + (u.driverNo ? ' \u00b7 Driver '+escapeHtml(u.driverNo) : '') + (u.suburb ? ' \u00b7 '+escapeHtml(u.suburb) : '');
+  document.querySelectorAll('#repAfPanel input[type=checkbox]').forEach(cb=>{ cb.checked = u.reasons.includes(cb.value); });
+  document.getElementById('repAfOtherTxt').value = u.other || '';
+  afSyncSummary();
+  document.getElementById('repAfAddBtn').textContent = 'Update order';
+  document.getElementById('repAfStep2').style.display = 'block';
+  document.getElementById('repAfDd').open = true;
+  document.getElementById('repAfOrderNo').scrollIntoView({block:'center', behavior:'smooth'});
+}
+document.getElementById('repAfList').addEventListener('click', e=>{
+  const eb = e.target.closest('[data-af-edit]');
+  if(eb){ afStartEdit(Number(eb.dataset.afEdit)); return; }
+  const btn = e.target.closest('[data-af-del]');
+  if(!btn) return;
+  const list = parseAfOrders(document.getElementById('repAfOrders').value);
+  list.splice(Number(btn.dataset.afDel), 1);
+  document.getElementById('repAfOrders').value = list.length ? JSON.stringify(list) : '';
+  renderAfList();
+  saveReportManualFields();
+});
+
+document.getElementById('repFailed').addEventListener('change', ()=>{
+  syncFulfilUI();
+  saveReportManualFields();
+});
+// A failed order went out on an earlier day and came back, so it is NOT on the
+// report date's manifest — look for it in the last few earlier manifests to
+// show/record who had it. Never blocks: a number not found is still recorded.
+async function findEarlierManifestRecord(orderNo, beforeDate){
+  const dates = (await loadDatesIndex()).filter(d=>d<beforeDate).sort().reverse().slice(0,7);
+  for(const d of dates){
+    const day = await loadDay(d);
+    const rec = day && day.records.find(r=>r.orderNo===orderNo);
+    if(rec) return { date:d, rec };
+  }
+  return null;
+}
+let ufPendingInfo = null;
+async function ufNext(){
+  const msg = document.getElementById('repUfMsg');
+  const raw = document.getElementById('repUfOrderNo').value.trim();
+  const orderNo = extractOrderNoFromScan(raw);
+  msg.style.color = '';
+  if(!orderNo){ msg.textContent = 'Enter the order no. first.'; return; }
+  if(parseUnfulfilled(document.getElementById('repUnfulfilled').value).some(u=>u.orderNo===orderNo)){
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Order '+orderNo+' is already in the list below.'; return;
+  }
+  msg.textContent = '';
+  const date = document.getElementById('reportDate').value || todayISO();
+  const prior = await findEarlierManifestRecord(orderNo, date);
+  ufPendingOrder = orderNo;
+  ufPendingInfo = prior ? { wentOut:prior.date, driverNo:prior.rec.driverNo||'', zone:prior.rec.zone||'', suburb:prior.rec.suburb||'' } : null;
+  document.getElementById('repUfOrderInfo').innerHTML = 'Order <b class="mono">'+escapeHtml(orderNo)+'</b>'
+    + (prior ? ' \u00b7 went out '+formatDDMM(prior.date)+' \u00b7 Driver '+escapeHtml(prior.rec.driverNo||'')+' \u00b7 '+escapeHtml(prior.rec.suburb||'')
+              : ' \u00b7 not found in the last few days\u2019 manifests (it will still be recorded)')
+    + ' \u2014 why did it fail?';
+  document.getElementById('repUfStep2').style.display = 'block';
+  document.getElementById('repReasonsDd').open = true;
+}
+document.getElementById('repUfNextBtn').addEventListener('click', ufNext);
+document.getElementById('repUfOrderNo').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); ufNext(); } });
+document.getElementById('repUfOrderNo').addEventListener('input', ()=>{ if(ufPendingOrder) ufResetStep(); }); // changed the order no. — start the reasons again
+document.getElementById('repReasonsPanel').addEventListener('change', ufSyncSummary);
+document.getElementById('repUfCancelBtn').addEventListener('click', ()=>{ ufResetStep(); document.getElementById('repUfOrderNo').value = ''; });
+function ufAdd(){
+  const msg = document.getElementById('repUfMsg');
+  const reasons = ufTicked();
+  if(!ufPendingOrder){ msg.textContent = 'Enter the order no. and press Next first.'; return false; }
+  if(!reasons.length){ msg.style.color = 'var(--danger)'; msg.textContent = 'Tick at least one reason.'; return false; }
+  const list = parseUnfulfilled(document.getElementById('repUnfulfilled').value);
+  const entry = Object.assign({ orderNo: ufPendingOrder, reasons }, ufPendingInfo || {});
+  if(ufEditIdx >= 0 && ufEditIdx < list.length) list[ufEditIdx] = entry; else list.push(entry);
+  document.getElementById('repUnfulfilled').value = JSON.stringify(list);
+  document.getElementById('repUfOrderNo').value = '';
+  msg.textContent = '';
+  ufResetStep();
+  renderUfList();
+  saveReportManualFields();
+  return true;
+}
+document.getElementById('repUfAddBtn').addEventListener('click', ufAdd);
+
+// Save: adds the order currently being entered (if its reasons are filled in)
+// and confirms the list is saved.
+async function ufSave(){
+  const msg = document.getElementById('repUfMsg');
+  if(ufPendingOrder){ if(!ufAdd()) return; }
+  else if(document.getElementById('repUfOrderNo').value.trim()){
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Press Next and tick the reasons, then Save \u2014 or clear the order no.'; return;
+  }
+  await saveReportManualFields();
+  const n = parseUnfulfilled(document.getElementById('repUnfulfilled').value).length;
+  msg.style.color = 'var(--success)'; msg.textContent = 'Saved \u2014 '+n+' failed order'+(n===1?'':'s')+' recorded.';
+  toast('Failed orders saved');
+}
+document.getElementById('repUfSaveBtn').addEventListener('click', ufSave);
+function ufStartEdit(i){
+  const u = parseUnfulfilled(document.getElementById('repUnfulfilled').value)[i];
+  if(!u) return;
+  ufResetStep();
+  ufEditIdx = i; ufPendingOrder = u.orderNo;
+  ufPendingInfo = { wentOut:u.wentOut, driverNo:u.driverNo, zone:u.zone, suburb:u.suburb };
+  document.getElementById('repUfOrderNo').value = u.orderNo;
+  document.getElementById('repUfMsg').textContent = '';
+  document.getElementById('repUfOrderInfo').innerHTML = 'Editing order <b class="mono">'+escapeHtml(u.orderNo)+'</b>'
+    + (u.wentOut ? ' \u00b7 went out '+formatDDMM(u.wentOut) : '') + (u.driverNo ? ' \u00b7 Driver '+escapeHtml(u.driverNo) : '') + (u.suburb ? ' \u00b7 '+escapeHtml(u.suburb) : '');
+  document.querySelectorAll('#repReasonsPanel input[type=checkbox]').forEach(cb=>{ cb.checked = u.reasons.includes(cb.value); });
+  ufSyncSummary();
+  document.getElementById('repUfAddBtn').textContent = 'Update order';
+  document.getElementById('repUfStep2').style.display = 'block';
+  document.getElementById('repReasonsDd').open = true;
+  document.getElementById('repUfOrderNo').scrollIntoView({block:'center', behavior:'smooth'});
+}
+document.getElementById('repUfList').addEventListener('click', e=>{
+  const eb = e.target.closest('[data-uf-edit]');
+  if(eb){ ufStartEdit(Number(eb.dataset.ufEdit)); return; }
+  const btn = e.target.closest('[data-uf-del]');
+  if(!btn) return;
+  const list = parseUnfulfilled(document.getElementById('repUnfulfilled').value);
+  list.splice(Number(btn.dataset.ufDel), 1);
+  document.getElementById('repUnfulfilled').value = list.length ? JSON.stringify(list) : '';
+  renderUfList();
+  saveReportManualFields();
+});
 
 (function populateHoursDropdown(){
   const sel = document.getElementById('repHours');
@@ -6749,20 +7303,8 @@ const REPORT_MANUAL_FIELDS = ['repController','repHours','repLastVehicle','repTe
   }
 })();
 
-(function populateVansTrucksDropdowns(){
-  ['repVansManual','repTrucksManual'].forEach(id=>{
-    const sel = document.getElementById(id);
-    for(let n=1; n<=10; n++){
-      const opt = document.createElement('option');
-      opt.value = String(n);
-      opt.textContent = String(n);
-      sel.appendChild(opt);
-    }
-  });
-})();
-
 document.getElementById('reportDate').addEventListener('change', refreshReport);
-REPORT_MANUAL_FIELDS.forEach(id=>{
+REPORT_MANUAL_FIELDS.filter(id=>id!=='repFailed' && id!=='repUnfulfilled' && id!=='repAllFulfilled' && id!=='repAfOrders' && id!=='repAfReasons' && id!=='repAfOther').forEach(id=>{
   document.getElementById(id).addEventListener('change', saveReportManualFields);
 });
 
@@ -6793,6 +7335,8 @@ async function refreshReport(){
   REPORT_MANUAL_FIELDS.forEach(id=>{
     document.getElementById(id).value = data[id] || '';
   });
+  syncFulfilUI();
+  syncAfUI();
   document.getElementById('reportSaveStatus').textContent = '\u00a0';
   await refreshReportAutoFieldsOnly();
 }
@@ -6827,10 +7371,18 @@ async function refreshReportAutoFieldsOnly(){
 }
 
 /* ---- Full one-page report: manual + auto-generated + failed delivery + external returns ---- */
+// Failed Orders: the number of orders entered (Yes with none entered still reads Yes).
+function failedCountLabel(m, rd){
+  if(m.repFailed!=='yes') return yesNoLabel(m.repFailed);
+  const n = rd && rd.unfulfilled ? rd.unfulfilled.length : 0;
+  return n ? String(n) : 'Yes';
+}
 function yesNoLabel(v){
   return v==='yes' ? 'Yes' : v==='no' ? 'No' : '—';
 }
 
+const LOAD_BANDS = [{label:'06:00\u201307:00', from:6, to:7}, {label:'07:00\u201310:00', from:7, to:10}];
+function loadBandText(b){ return b.users.length ? b.users.length+' \u2014 '+b.users.join(', ') : '0'; }
 async function computeReportData(date){
   const manual = await loadReportData(date);
   const day = await loadDay(date);
@@ -6850,8 +7402,8 @@ async function computeReportData(date){
   const unassignedDrivers = driverNos.filter(d=>!driverVehicleMap[d]);
   const autoVans = explicitVans + unassignedDrivers.filter(d=>/^\d{4}$/.test(d)).length;
   const autoTrucks = explicitTrucks + unassignedDrivers.filter(d=>/^\d{3}$/.test(d)).length;
-  const vans = manual.repVansManual ? Number(manual.repVansManual) : autoVans;
-  const trucks = manual.repTrucksManual ? Number(manual.repTrucksManual) : autoTrucks;
+  const vans = autoVans;     // counted automatically from the Van/Truck set in Zone Assignment
+  const trucks = autoTrucks;
 
   const deliveredTimes = records.filter(r=>r.status==='delivered' && r.deliveredAt && !r.preloaded).map(r=>r.deliveredAt).sort();
   const fmt = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -6866,6 +7418,15 @@ async function computeReportData(date){
       driverMap[key].preloadedDriverNo = r.preloadedDriverNo;
     }
   });
+  // Load-out users by time band — everyone who made a scan in the band (store
+  // co-workers, EMPU N-codes and all-access/manager codes alike), from the scan history.
+  const loadBands = LOAD_BANDS.map(b=>({ label:b.label, users:new Set() }));
+  records.forEach(r=>scanEventsOf(r).forEach(e=>{
+    if(!e.by || e.by==='\u2014') return;
+    const h = new Date(e.at).getHours();
+    LOAD_BANDS.forEach((b,i)=>{ if(h>=b.from && h<b.to) loadBands[i].users.add(e.by); });
+  }));
+  const loadBandsOut = loadBands.map(b=>({ label:b.label, users:[...b.users].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true})) }));
   const driverSnapshot = Object.values(driverMap).sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
 
   const preloadMap = {};
@@ -6886,6 +7447,7 @@ async function computeReportData(date){
 
   return {
     manual,
+    loadBands: loadBandsOut,
     vans, trucks,
     totalOrders: records.length,
     totalPreload: preloadOrders.length,
@@ -6899,7 +7461,10 @@ async function computeReportData(date){
     driverSnapshot,
     preloadSnapshot,
     failedRecords: records.filter(r=>isReportFailed(r, date)),
-    externalReturns
+    externalReturns,
+    unfulfilled: manual.repFailed==='yes'
+      ? parseUnfulfilled(manual.repUnfulfilled).map(u=>({ orderNo:u.orderNo, wentOut:u.wentOut, driverNo:u.driverNo, zone:u.zone, suburb:u.suburb, reasons:u.reasons }))
+      : []
   };
 }
 
@@ -6924,7 +7489,7 @@ function buildReportHtml(date, rd){
 
     + '<table class="report-auto-table">'
     + '<tr><th>Controller</th><td>'+escapeHtml(m.repController||'—')+'</td></tr>'
-    + '<tr><th>Load Out Hours</th><td>'+escapeHtml(m.repHours||'—')+'</td></tr>'
+    + rd.loadBands.map(b=>'<tr><th>Users '+b.label+'</th><td>'+escapeHtml(loadBandText(b))+'</td></tr>').join('')
     + '<tr><th>Last Vehicle Left</th><td>'+escapeHtml(m.repLastVehicle||'—')+'</td></tr>'
     + '<tr><th>Tent Check</th><td>'+yesNoLabel(m.repTent)+'</td></tr>'
     + '<tr><th>TMP Check</th><td>'+yesNoLabel(m.repTmp)+'</td></tr>'
@@ -6932,6 +7497,9 @@ function buildReportHtml(date, rd){
     + '<tr><th>ANC Supervisor Present</th><td>'+yesNoLabel(m.repAnc)+'</td></tr>'
     + '<tr><th>No. of Vans</th><td>'+rd.vans+'</td></tr>'
     + '<tr><th>No. of Trucks</th><td>'+rd.trucks+'</td></tr>'
+    + '<tr><th>Failed Orders</th><td>'+failedCountLabel(m, rd)+'</td></tr>'
+    + '<tr><th>All Fulfilled</th><td>'+yesNoLabel(m.repAllFulfilled)+'</td></tr>'
+    + (m.repAllFulfilled==='no' ? '<tr><th style="padding-left:22px;">Orders</th><td>'+escapeHtml(afOrdersText(m.repAfOrders, m.repAfReasons, m.repAfOther)).replace(/; /g,'<br>')+'</td></tr>' : '')
     + '<tr><th>Total Orders</th><td>'+rd.totalOrders+'</td></tr>'
     + '<tr><th style="padding-left:22px;">Store</th><td>'+rd.storeOrders+'</td></tr>'
     + '<tr><th style="padding-left:22px;">EMPU</th><td>'+rd.empuOrdersIncludingConnect+'</td></tr>'
@@ -6951,6 +7519,11 @@ function buildReportHtml(date, rd){
 
     + '<div class="zqr-section-label">FAILED DELIVERY <span class="report-sub">(not delivered by 10:00am)</span></div>'
     + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th><th>Suburb</th></tr></thead><tbody>'+failedRows+'</tbody></table>'
+
+    + (m.repFailed==='yes' ? '<div class="zqr-section-label">FAILED ORDERS \u2014 REASONS</div>'
+        + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Went out</th><th>Driver No.</th><th>Zone</th><th>Suburb</th><th>Reason</th></tr></thead><tbody>'
+        + (rd.unfulfilled.length ? rd.unfulfilled.map(u=>'<tr><td class="mono">'+escapeHtml(u.orderNo)+'</td><td>'+escapeHtml(u.wentOut ? formatDDMM(u.wentOut) : '')+'</td><td>'+escapeHtml(u.driverNo)+'</td><td>'+escapeHtml(u.zone)+'</td><td>'+escapeHtml(u.suburb)+'</td><td>'+escapeHtml(reasonsText(u.reasons))+'</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:#666;">No orders entered</td></tr>')
+        + '</tbody></table>' : '')
 
     + '<div class="zqr-section-label">EXTERNAL RETURNS ASSIGNED</div>'
     + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th></tr></thead><tbody>'+externalRows+'</tbody></table>'
@@ -7043,7 +7616,7 @@ async function drawReportPdf(doc, date, rd){
 
   kvTable([
     ['Controller', m.repController||'—'],
-    ['Load Out Hours', m.repHours||'—'],
+    ...rd.loadBands.map(b=>['Users '+b.label, loadBandText(b)]),
     ['Last Vehicle Left', m.repLastVehicle||'—'],
     ['Tent Check', yesNoLabel(m.repTent)],
     ['TMP Check', yesNoLabel(m.repTmp)],
@@ -7051,6 +7624,11 @@ async function drawReportPdf(doc, date, rd){
     ['ANC Supervisor Present', yesNoLabel(m.repAnc)],
     ['No. of Vans', String(rd.vans)],
     ['No. of Trucks', String(rd.trucks)],
+    ['Failed Orders', failedCountLabel(m, rd)],
+    ['All Fulfilled', yesNoLabel(m.repAllFulfilled)],
+    ...(m.repAllFulfilled==='no' ? (parseAfOrders(m.repAfOrders).length
+        ? parseAfOrders(m.repAfOrders).map(o=>['    '+o.orderNo, afReasonsLabel(o.reasons, o.other)])
+        : [['    Reason', afText(m.repAfReasons, m.repAfOther)]]) : []),
     ['Total Orders', String(rd.totalOrders)],
     ['    Store', String(rd.storeOrders)],
     ['    EMPU', String(rd.empuOrdersIncludingConnect)],
@@ -7073,6 +7651,12 @@ async function drawReportPdf(doc, date, rd){
   sectionLabel('FAILED DELIVERY (not delivered by 10:00am)');
   dataTable(['Order No.','Driver No.','Zone','Suburb'],
     rd.failedRecords.map(r=>[r.orderNo, r.driverNo, r.zone, r.suburb]));
+
+  if(m.repFailed==='yes'){
+    sectionLabel('FAILED ORDERS \u2014 REASONS');
+    dataTable(['Order No.','Went out','Driver No.','Zone','Suburb','Reason'],
+      rd.unfulfilled.length ? rd.unfulfilled.map(u=>[u.orderNo, u.wentOut ? formatDDMM(u.wentOut) : '', u.driverNo, u.zone, u.suburb, reasonsText(u.reasons)]) : [['No orders entered','','','','','']]);
+  }
 
   sectionLabel('EXTERNAL RETURNS ASSIGNED');
   dataTable(['Order No.','Driver No.','Zone'],
