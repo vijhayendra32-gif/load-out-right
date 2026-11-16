@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.69.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.71.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -509,7 +509,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.69.0b</span>
+    <span class="version-tag" id="versionTagRight">3.71.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -1694,13 +1694,15 @@ async function readJsonList(suffix){
 // wrong-zone (ZQR didn't match), reset, cleared, manual-delivered.
 const SCAN_LOG_MAX = 40;
 const SCAN_KIND_LABELS = {
-  'transit':'In transit', 'rescan':'Re-scan (already scanned)', 'delivered':'Delivered',
+  'transit':'In transit', 'rescan':'Re-scan', 'delivered':'Delivered',
   'wrong-zone':'Wrong location', 'reset':'Reset', 'cleared':'Scan cleared', 'manual-delivered':'Marked delivered manually'
 };
-function addScanEvent(rec, kind, by, at){
+function addScanEvent(rec, kind, by, at, detail){
   if(!rec) return;
   if(!Array.isArray(rec.scanLog)) rec.scanLog = [];
-  rec.scanLog.push({ k:kind, by: by || currentUserCode || '\u2014', at: at || new Date().toISOString() });
+  const ev = { k:kind, by: by || currentUserCode || '\u2014', at: at || new Date().toISOString() };
+  if(detail) ev.d = detail; // e.g. which ZQR was scanned on a wrong-location scan
+  rec.scanLog.push(ev);
   if(rec.scanLog.length > SCAN_LOG_MAX) rec.scanLog = rec.scanLog.slice(-SCAN_LOG_MAX);
 }
 // The scan events for an order. Orders scanned before the history existed
@@ -2687,7 +2689,7 @@ function renderScanLogTable(){
       + (filtering ? rows.length+' of '+rowsAll.length+' scans' : rowsAll.length+' scan'+(rowsAll.length===1?'':'s'))
       + ' by '+userCount+' user'+(userCount===1?'':'s')+'.</div>'
     + '<div style="overflow-x:auto;"><table><thead><tr><th>Time</th><th>User</th><th>Order No.</th><th>Zone</th><th>Scan</th></tr></thead><tbody>'
-    + shown.map(e=>'<tr><td class="mono">'+escapeHtml(e.timeText)+'</td><td class="mono">'+escapeHtml(e.by)+'</td><td class="mono">'+escapeHtml(e.orderNo)+'</td><td>'+escapeHtml(e.zone||'')+'</td><td>'+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)+(e.pre?' <span class="badge preloaded-badge">Preload</span>':'')+'</td></tr>').join('')
+    + shown.map(e=>'<tr><td class="mono">'+escapeHtml(e.timeText)+'</td><td class="mono">'+escapeHtml(e.by)+'</td><td class="mono">'+escapeHtml(e.orderNo)+'</td><td>'+escapeHtml(e.zone||'')+'</td><td>'+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)+(e.d?' <span class="subtext" style="margin:0;">('+escapeHtml(e.d)+')</span>':'')+(e.pre?' <span class="badge preloaded-badge">Preload</span>':'')+'</td></tr>').join('')
     + '</tbody></table></div>'
     + (rows.length>shown.length ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Showing the latest '+shown.length+' of '+rows.length+'.</div>' : '')
     + '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Orders scanned before v3.51 only show their first and last scan.</div>';
@@ -2893,8 +2895,8 @@ async function renderActivityLog(){
   const scanBox = document.getElementById('activityScanLog');
   const preOrdersForLog = await loadPreloadOrders(date);
   const scanEvents = [];
-  (day ? day.records : []).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, pre:false })));
-  (preOrdersForLog||[]).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, pre:true })));
+  (day ? day.records : []).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, d:e.d, pre:false })));
+  (preOrdersForLog||[]).forEach(r=> scanEventsOf(r).forEach(e=> scanEvents.push({ at:e.at, by:e.by, k:e.k, orderNo:r.orderNo, zone:r.zone, d:e.d, pre:true })));
   scanEvents.sort((a,b)=> b.at.localeCompare(a.at));
   scanLogEvents = scanEvents;
   scanLogDate = date;
@@ -5242,7 +5244,13 @@ window.viewEmpuQrForm = async function(){
   const seen = new Set();
   if(day){
     day.records.forEach(r=>{
-      if(!r.driverNo || seen.has(r.driverNo)) return;
+      if(!r.driverNo) return;
+      if(seen.has(r.driverNo)){
+        // the first record seen may have had no zone — take the first one that does
+        const d0 = drivers.find(x=>x.driverNo===r.driverNo);
+        if(d0 && !d0.zone && r.zone) d0.zone = r.zone;
+        return;
+      }
       seen.add(r.driverNo);
       drivers.push({ driverNo:r.driverNo, zone:r.zone });
     });
@@ -5261,6 +5269,8 @@ window.viewEmpuQrForm = async function(){
   // rendering each tier at its maximum driver count against the actual A4
   // printable height, including the larger driver-no. font requested.
   const n = drivers.length;
+  const noZoneCount = drivers.filter(d=>!String(d.zone||'').trim()).length;
+  if(noZoneCount) toast(noZoneCount+' driver'+(noZoneCount===1?' has':'s have')+' no zone yet \u2014 assign zones first, then re-open this form.', 6500);
   let columns, qrSize, fontSize;
   if(n <= 6){ columns = 1; qrSize = 115; fontSize = 36; }
   else if(n <= 14){ columns = 2; qrSize = 100; fontSize = 28; }
@@ -5271,6 +5281,13 @@ window.viewEmpuQrForm = async function(){
   const cells = drivers.map((d, i)=>{
     const code = buildZqrCode(d.zone, date);
     const qrId = 'empuqr_'+i;
+    if(!String(d.zone||'').trim()){
+      // No zone yet: a QR would read as "-DDMMYY" and the scanner rejects it.
+      return '<div class="empu-qr-cell">'
+        + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
+        + '<div class="empu-qr-code" style="width:'+qrSize+'px; height:'+qrSize+'px; border:2px dashed #C22A2A; color:#C22A2A; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:'+Math.max(11, Math.round(qrSize/7))+'px; text-align:center;">NO ZONE</div>'
+        + '</div>';
+    }
     return '<div class="empu-qr-cell">'
       + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
       + '<div class="empu-qr-code" id="'+qrId+'"></div>'
@@ -6170,12 +6187,20 @@ function parseOrderCode(raw){
   return { date: null, orderNo: raw };
 }
 function parseZqrCode(raw){
+  // Tolerant of what handheld scanners add: control characters, an AIM symbology
+  // prefix (e.g. "]Q1"), unicode dashes or spaces around the dash.
+  raw = String(raw||'').replace(/[\u0000-\u001f\u007f\u200b-\u200d\ufeff]/g,'').trim()
+    .replace(/^\][A-Za-z][0-9A-Za-z]/,'')
+    .replace(/[\u2010-\u2015\u2212]/g,'-')
+    .replace(/\s*-\s*/g,'-').trim();
   const idx = raw.lastIndexOf('-');
-  if(idx <= 0) return null;
-  const zone = raw.slice(0, idx);
+  if(idx < 0) return null;
+  const zone = raw.slice(0, idx).trim();
   const dateCode = raw.slice(idx+1);
   if(!/^\d{6}$/.test(dateCode)) return null;
-  return { zone, dateCode };
+  // A code with a date but no zone (e.g. "-161126") was printed before the
+  // driver had a zone — flagged so the scan can say so.
+  return { zone, dateCode, noZone: !zone };
 }
 
 /* ---- Recover in-progress scan work if the app reloads/gets logged out mid-scan ----
@@ -6512,7 +6537,13 @@ async function handleZqrScan(raw){
   const z = parseZqrCode(raw);
   const stageEl = document.getElementById('stageBWrap');
   if(!z){
-    toast('Not a recognised ZQR code');
+    const shown = String(raw||'').replace(/[\u0000-\u001f]/g,'').trim();
+    toast('Not a recognised ZQR code \u2014 scanner read: "'+(shown.length>36 ? shown.slice(0,36)+'\u2026' : shown)+'"', 6000);
+    beep(220,220,'alert');
+    return;
+  }
+  if(z.noZone){
+    toast('This ZQR has no zone on it (printed before the driver had a zone). Re-print the form after assigning zones.', 6500);
     beep(220,220,'alert');
     return;
   }
@@ -6565,12 +6596,13 @@ async function handleZqrScan(raw){
     beep(140, 500, 'alert', { waveform:'sawtooth', pulseMs:100, vibrate:[150,80,150,80,150] });
     // A wrong-location scan is still a scan — record it against the order.
     const badOrder = currentScanOrder, badBy = currentUserCode, badAt = new Date().toISOString();
+    const badDetail = 'ZQR Zone '+z.zone+' \u00b7 '+z.dateCode.slice(0,2)+'/'+z.dateCode.slice(2,4); // what was actually scanned
     (async ()=>{
       try{
         if(badOrder.isPreload){
-          await updatePreloadOrdersAtomic(badOrder.date, arr=>{ addScanEvent(arr.find(r=>r.id===badOrder.recId), 'wrong-zone', badBy, badAt); });
+          await updatePreloadOrdersAtomic(badOrder.date, arr=>{ addScanEvent(arr.find(r=>r.id===badOrder.recId), 'wrong-zone', badBy, badAt, badDetail); });
         }else{
-          await updateDayAtomic(badOrder.date, d=>{ addScanEvent(d.records.find(r=>r.id===badOrder.recId), 'wrong-zone', badBy, badAt); });
+          await updateDayAtomic(badOrder.date, d=>{ addScanEvent(d.records.find(r=>r.id===badOrder.recId), 'wrong-zone', badBy, badAt, badDetail); });
         }
       }catch(e){ console.error('wrong-zone scan log failed', e); }
     })();
@@ -6840,7 +6872,14 @@ async function liveOrderLookup(){
       + '</div>'
       + (trolleyCount ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Store trolley no <b>'+storeTrolleys+'</b> · EMPU trolley no <b>'+empuTrolleys+'</b></div>' : '')
       + (()=>{ const ev = scanEventsOf(found).slice().sort((a,b)=>a.at.localeCompare(b.at)); return ev.length
-          ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Scan history: '+ev.map(e=>'<span class="mono">'+escapeHtml(new Date(e.at).toLocaleTimeString())+'</span> <b>'+escapeHtml(e.by)+'</b> '+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)).join(' \u00b7 ')+'</div>' : ''; })()
+          ? '<div class="subtext" style="margin-top:8px; margin-bottom:0;">Scan history: '+ev.map(e=>'<span class="mono">'+escapeHtml(new Date(e.at).toLocaleTimeString())+'</span> <b>'+escapeHtml(e.by)+'</b> '+escapeHtml(SCAN_KIND_LABELS[e.k]||e.k)
+              + (e.d ? ' ('+escapeHtml(e.d)+')' : '')
+              + (()=>{ // a wrong-location scan corrected by the next scan within 5s isn't counted as a wrong delivery
+                  if(e.k!=='wrong-zone') return '';
+                  const nx = ev[ev.indexOf(e)+1];
+                  const gap = nx ? new Date(nx.at) - new Date(e.at) : null;
+                  return (gap!==null && gap < WRONG_RESCAN_MS) ? ' <i>(corrected in '+Math.round(gap/1000)+'s \u2014 not counted)</i>' : '';
+                })()).join(' \u00b7 ')+'</div>' : ''; })()
       + '</div>';
   }).join('');
 }
