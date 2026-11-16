@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.71.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.72.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -509,7 +509,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.71.0b</span>
+    <span class="version-tag" id="versionTagRight">3.72.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -752,7 +752,7 @@
 
     <div class="card">
       <h2>EMPU-QR form</h2>
-      <div class="subtext">One entry per driver — driver no. beside their zone's QR code, same code as their ZQR. All drivers on a single portrait page.</div>
+      <div class="subtext">One entry per driver — driver no. beside a QR code that carries the driver no. (not the zone), so it can be printed any time after upload, before zones are assigned. Includes the date's preload drivers. All drivers on a single portrait page.</div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="viewEmpuQrForm()">View / Print EMPU-QR Form</button>
       </div>
@@ -5255,6 +5255,10 @@ window.viewEmpuQrForm = async function(){
       drivers.push({ driverNo:r.driverNo, zone:r.zone });
     });
   }
+  // Drivers from that date's preload list too, so Netley can print the same form for a preload.
+  (await loadPreloadOrders(date)).forEach(r=>{
+    if(r.driverNo && !seen.has(r.driverNo)){ seen.add(r.driverNo); drivers.push({ driverNo:r.driverNo, zone:r.zone }); }
+  });
   drivers.sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
 
   if(!drivers.length){
@@ -5269,8 +5273,6 @@ window.viewEmpuQrForm = async function(){
   // rendering each tier at its maximum driver count against the actual A4
   // printable height, including the larger driver-no. font requested.
   const n = drivers.length;
-  const noZoneCount = drivers.filter(d=>!String(d.zone||'').trim()).length;
-  if(noZoneCount) toast(noZoneCount+' driver'+(noZoneCount===1?' has':'s have')+' no zone yet \u2014 assign zones first, then re-open this form.', 6500);
   let columns, qrSize, fontSize;
   if(n <= 6){ columns = 1; qrSize = 115; fontSize = 36; }
   else if(n <= 14){ columns = 2; qrSize = 100; fontSize = 28; }
@@ -5279,15 +5281,11 @@ window.viewEmpuQrForm = async function(){
   else { columns = 5; qrSize = 48; fontSize = 15; }
 
   const cells = drivers.map((d, i)=>{
-    const code = buildZqrCode(d.zone, date);
+    // The code carries the DRIVER no. (known from the upload), not the zone, so it is
+    // valid the moment the file is uploaded — it never depends on zones being assigned
+    // first. The scan accepts either a zone or a driver no. (see handleZqrScan).
+    const code = buildZqrCode(d.driverNo, date);
     const qrId = 'empuqr_'+i;
-    if(!String(d.zone||'').trim()){
-      // No zone yet: a QR would read as "-DDMMYY" and the scanner rejects it.
-      return '<div class="empu-qr-cell">'
-        + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
-        + '<div class="empu-qr-code" style="width:'+qrSize+'px; height:'+qrSize+'px; border:2px dashed #C22A2A; color:#C22A2A; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:'+Math.max(11, Math.round(qrSize/7))+'px; text-align:center;">NO ZONE</div>'
-        + '</div>';
-    }
     return '<div class="empu-qr-cell">'
       + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
       + '<div class="empu-qr-code" id="'+qrId+'"></div>'
@@ -6543,11 +6541,15 @@ async function handleZqrScan(raw){
     return;
   }
   if(z.noZone){
-    toast('This ZQR has no zone on it (printed before the driver had a zone). Re-print the form after assigning zones.', 6500);
+    toast('This ZQR has no zone or driver on it \u2014 scanner read: "'+String(raw||'').replace(/[\u0000-\u001f]/g,'').trim().slice(0,30)+'". Check the printed code.', 6500);
     beep(220,220,'alert');
     return;
   }
-  const match = z.zone===currentScanOrder.zone && z.dateCode===formatDDMMYY(currentScanOrder.date);
+  // A ZQR carries a zone (store forms) or a driver no. (EMPU-QR form) — either
+  // identifies the right bay for this order.
+  const sameKey = s => String(s||'').trim().toUpperCase();
+  const match = (sameKey(z.zone)===sameKey(currentScanOrder.zone) || sameKey(z.zone)===sameKey(currentScanOrder.driverNo))
+    && z.dateCode===formatDDMMYY(currentScanOrder.date);
   if(match){
     // Show the confirmation immediately — the match is already verified above,
     // so the UI doesn't need to wait on the database write to confirm it.
@@ -6596,7 +6598,7 @@ async function handleZqrScan(raw){
     beep(140, 500, 'alert', { waveform:'sawtooth', pulseMs:100, vibrate:[150,80,150,80,150] });
     // A wrong-location scan is still a scan — record it against the order.
     const badOrder = currentScanOrder, badBy = currentUserCode, badAt = new Date().toISOString();
-    const badDetail = 'ZQR Zone '+z.zone+' \u00b7 '+z.dateCode.slice(0,2)+'/'+z.dateCode.slice(2,4); // what was actually scanned
+    const badDetail = 'ZQR '+z.zone+' \u00b7 '+z.dateCode.slice(0,2)+'/'+z.dateCode.slice(2,4); // what was actually scanned
     (async ()=>{
       try{
         if(badOrder.isPreload){
