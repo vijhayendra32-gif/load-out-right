@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.75.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.77.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -511,7 +511,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.75.0b</span>
+    <span class="version-tag" id="versionTagRight">3.77.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -2733,6 +2733,24 @@ function nextScanBreakdownHtml(records){
   return '<details style="margin-top:12px;"><summary style="cursor:pointer; font-weight:700;">Next-scan gaps by user</summary>'
     + headline + '<div class="subtext" style="margin:0 0 6px;">Highest average first. Tap a user for each delivery\u2019s gap, longest first.</div>' + blocks + '</details>';
 }
+// Who gets credit for a delivered order in the Activity Log tables. Normally the user who made the
+// last delivery scan (completedBy). But if EMPU delivered it and a Store user later re-scanned it,
+// completedBy is the Store user — so the EMPU user is credited from the scan history too, otherwise
+// the order drops out of every N-user's count while the Dashboard still counts it as EMPU.
+function activityCredits(r){
+  if(r.status!=='delivered' || !r.completedBy) return [];
+  const t = deliveredTrolleys(r);
+  const at = r.deliveredAt || null;
+  if(N_CODES.includes(r.completedBy) || !isEmpuRecord(r)){
+    return [{ user:r.completedBy, n:t.store+t.empu, at }];
+  }
+  const ev = scanEventsOf(r).find(e=>e.k==='delivered' && N_CODES.includes(e.by));
+  const nUser = ev ? ev.by : (N_CODES.includes(r.scannedBy) ? r.scannedBy : null);
+  if(!nUser) return [{ user:r.completedBy, n:t.store+t.empu, at }];
+  const out = [{ user:nUser, n:Math.max(t.empu,1), at: ev ? ev.at : at, note:'re-scanned by '+r.completedBy }];
+  if(t.store>0) out.push({ user:r.completedBy, n:t.store, at });
+  return out;
+}
 async function renderActivityLog(){
   const isManagerView = ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess;
   document.getElementById('activityDateCard').style.display = isManagerView ? 'block' : 'none';
@@ -2787,12 +2805,14 @@ async function renderActivityLog(){
   const completedCounts = {};
   const pendingCounts = {};
   if(day){
+    // Delivered counts include preloaded orders (so they match the Dashboard); the timing/average
+    // statistics above and below still leave preloads out.
+    day.records.forEach(r=>{
+      // Trolleys, not orders: an order with several trolleys counts once per trolley.
+      activityCredits(r).forEach(c=>{ completedCounts[c.user] = (completedCounts[c.user]||0) + c.n; });
+    });
     statRecordsOf(day).forEach(r=>{
-      if(r.status==='delivered' && r.completedBy){
-        // Trolleys, not orders: an order with several trolleys counts once per trolley.
-        const t = deliveredTrolleys(r);
-        completedCounts[r.completedBy] = (completedCounts[r.completedBy]||0) + t.store + t.empu;
-      }else if(r.scannedBy && r.status!=='delivered'){
+      if(r.status!=='delivered' && r.scannedBy){
         // scanned (picked up) by this user but not yet completed today
         pendingCounts[r.scannedBy] = (pendingCounts[r.scannedBy]||0) + 1;
       }
@@ -2874,10 +2894,12 @@ async function renderActivityLog(){
   const detailBox = document.getElementById('activityOrderDetail');
   const detailRows = [];
   if(day){
-    statRecordsOf(day).forEach(r=>{
+    day.records.forEach(r=>{
       if(r.status==='delivered' && r.completedBy){
-        detailRows.push({ user:r.completedBy, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: r.deliveredAt ? fmtTime(r.deliveredAt) : '—' });
-      }else if(r.scannedBy && r.status!=='delivered'){
+        activityCredits(r).forEach(c=>{
+          detailRows.push({ user:c.user, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: c.at ? fmtTime(c.at) : '—', note:[r.preloaded?'Preloaded':'', c.note||''].filter(Boolean).join(' \u00b7 ') });
+        });
+      }else if(!r.preloaded && r.scannedBy && r.status!=='delivered'){
         detailRows.push({ user:r.scannedBy, orderNo:r.orderNo, zone:r.zone, status:'In Transit', time:'—' });
       }
     });
@@ -2888,10 +2910,18 @@ async function renderActivityLog(){
   }else{
     const rowsHtml = detailRows.map(d=>
       '<tr><td class="mono">'+escapeHtml(d.user)+'</td><td class="mono">'+escapeHtml(d.orderNo)+'</td><td>'+escapeHtml(d.zone)+'</td>'
-      + '<td class="center"><span class="badge '+(d.status==='Delivered'?'delivered':'pending')+'">'+d.status+'</span></td>'
+      + '<td class="center"><span class="badge '+(d.status==='Delivered'?'delivered':'pending')+'">'+d.status+'</span>'+(d.note ? '<div class="subtext" style="margin:2px 0 0; font-size:11px;">'+escapeHtml(d.note)+'</div>' : '')+'</td>'
       + '<td class="mono">'+d.time+'</td></tr>'
     ).join('');
-    detailBox.innerHTML = '<table><thead><tr><th>User</th><th>Order No.</th><th>Zone</th><th>Status</th><th>Time</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+    // Reconciliation with the Dashboard's EMPU figure, so a gap is visible rather than silent.
+    const dashEmpu = day.records.filter(r=>(r.preloaded || !isPreload(r)) && r.status==='delivered' && isEmpuRecord(r));
+    const listedNos = new Set(detailRows.filter(d=>N_CODES.includes(d.user) && d.status==='Delivered').map(d=>d.orderNo));
+    const missingEmpu = dashEmpu.filter(r=>!listedNos.has(r.orderNo));
+    const recon = dashEmpu.length
+      ? '<div class="subtext" style="margin-top:10px; margin-bottom:0;">EMPU orders delivered: <b>'+dashEmpu.length+'</b> on the Dashboard \u00b7 <b>'+(dashEmpu.length-missingEmpu.length)+'</b> listed above under N users'
+        + (missingEmpu.length ? ' \u2014 not attributed to an N user: <span class="mono">'+missingEmpu.map(r=>escapeHtml(r.orderNo)).join(', ')+'</span>' : ' \u2014 all accounted for')+'.</div>'
+      : '';
+    detailBox.innerHTML = '<table><thead><tr><th>User</th><th>Order No.</th><th>Zone</th><th>Status</th><th>Time</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+recon;
   }
 
   // Scan log — every scan event for the date, all users.
@@ -6817,7 +6847,7 @@ async function liveOrderLookup(){
     if(r.repAllFulfilled!=='no') return;
     parseAfOrders(r.repAfOrders).forEach(u=>{ if(u.orderNo===vkey) afHits.push(Object.assign({ reportDate:d }, u)); });
   });
-  const afHtml = afHits.map(h=>
+  const afItems = afHits.map(h=>({ date:h.reportDate, rank:2, html:
     '<div style="margin-top:14px; border:1.5px solid var(--warning); background:var(--warning-soft); border-radius:8px; padding:14px 16px;">'
     + '<div style="color:var(--warning); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--warning); color:#fff; margin-left:6px;">Not fulfilled</span></div>'
     + '<div style="color:var(--warning); font-size:14px;">Reported <b>'+escapeHtml(formatDDMMYYYY(h.reportDate))+'</b></div>'
@@ -6826,8 +6856,8 @@ async function liveOrderLookup(){
         + (h.zone ? ' \u00b7 Zone <b class="mono">'+escapeHtml(h.zone)+'</b>' : '')
         + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
     + '<div style="color:var(--warning); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(afReasonsLabel(h.reasons, h.other))+'</b></div>'
-    + '</div>').join('');
-  const failedHtml = failedHits.map(h=>
+    + '</div>' }));
+  const failedItems = failedHits.map(h=>({ date:h.returnedOn, rank:1, html:
     '<div style="margin-top:14px; border:1.5px solid var(--danger); background:var(--danger-soft); border-radius:8px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--danger);">'
     + '<div style="min-width:0;"><div style="color:var(--danger); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--danger); color:#fff; margin-left:6px;">Failed order</span></div>'
     + '<div style="color:var(--danger); font-size:14px;">Brought back <b>'+escapeHtml(formatDDMMYYYY(h.returnedOn))+'</b>'
@@ -6838,23 +6868,22 @@ async function liveOrderLookup(){
         + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
     + '<div style="color:var(--danger); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(reasonsText(h.reasons))+'</b></div></div>'
     + failedCountBadge(failedHits.length)
-    + '</div>').join('');
+    + '</div>' }));
 
   if(!matches.length && !failedHits.length && !afHits.length){
     resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">No order matching "'+escapeHtml(val)+'" found in the last '+RETENTION_DAYS+' days.</div>';
     return;
   }
-  matches.sort((a,b)=> b.date.localeCompare(a.date)); // most recent first
-
+  
   const multipleMatches = matches.length > 1;
-  resultEl.innerHTML = failedHtml + afHtml + matches.map(found=>{
+  const matchItems = matches.map(found=>{
     const empu = isEmpuRecord(found);
     const empuConnect = isEmpuConnectRecord(found);
     const trolleyCount = found.deliveredScanCount||0;
     const storeTrolleys = found.storeTrolleyCount||0;
     const empuTrolleys = found.empuTrolleyCount||0;
     const refNo = multipleMatches ? extract8DigitRef(found.customerRef) : '';
-    return '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
+    const html = '<div style="margin-top:14px; border:1.5px solid var(--line); border-radius:8px; padding:14px 16px;">'
       + '<div class="subtext" style="margin-bottom:10px;">Order <b class="mono">'+escapeHtml(found.orderNo)+'</b> · '+formatDDMM(found.date)
       + (empu ? ' <span class="badge '+(empuConnect ? 'empu-connect' : 'empu-order')+'">'+(empuConnect ? 'Connect' : 'order')+'</span>' : '')
       + (found.preloadOnly ? ' <span class="badge preloaded-badge">Preloaded on '+escapeHtml(formatDDMMYYYY(found.date))+'</span>'
@@ -6883,7 +6912,13 @@ async function liveOrderLookup(){
                   return (gap!==null && gap < WRONG_RESCAN_MS) ? ' <i>(corrected in '+Math.round(gap/1000)+'s \u2014 not counted)</i>' : '';
                 })()).join(' \u00b7 ')+'</div>' : ''; })()
       + '</div>';
-  }).join('');
+    return { date: found.date, rank:0, html: html };
+  });
+  // One timeline: manifest cards, failed-order cards and not-fulfilled cards together,
+  // most recent at the top and the first transaction at the bottom.
+  resultEl.innerHTML = matchItems.concat(failedItems, afItems)
+    .sort((a,b)=> b.date.localeCompare(a.date) || a.rank - b.rank)
+    .map(x=>x.html).join('');
 }
 
 let statusFilter = '';
