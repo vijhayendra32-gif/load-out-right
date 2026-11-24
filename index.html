@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.77.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.78.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -511,7 +511,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.77.0b</span>
+    <span class="version-tag" id="versionTagRight">3.78.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -2803,13 +2803,17 @@ async function renderActivityLog(){
 
   const day = await loadDay(date);
   const completedCounts = {};
+  const preloadCounts = {};
   const pendingCounts = {};
   if(day){
-    // Delivered counts include preloaded orders (so they match the Dashboard); the timing/average
-    // statistics above and below still leave preloads out.
+    // "Delivered" matches the Total trolleys figure in the statistics (preloaded orders excluded);
+    // preloaded deliveries are counted separately in their own column.
     day.records.forEach(r=>{
       // Trolleys, not orders: an order with several trolleys counts once per trolley.
-      activityCredits(r).forEach(c=>{ completedCounts[c.user] = (completedCounts[c.user]||0) + c.n; });
+      activityCredits(r).forEach(c=>{
+        const tgt = r.preloaded ? preloadCounts : completedCounts;
+        tgt[c.user] = (tgt[c.user]||0) + c.n;
+      });
     });
     statRecordsOf(day).forEach(r=>{
       if(r.status!=='delivered' && r.scannedBy){
@@ -2869,12 +2873,13 @@ async function renderActivityLog(){
     if(!userMap[e.userCode]) userMap[e.userCode] = { logins:[], logouts:[] };
     (e.event==='login' ? userMap[e.userCode].logins : userMap[e.userCode].logouts).push(e.ts);
   });
-  Object.keys(completedCounts).concat(Object.keys(pendingCounts)).forEach(code=>{
+  Object.keys(completedCounts).concat(Object.keys(pendingCounts), Object.keys(preloadCounts)).forEach(code=>{
     if(!userMap[code]) userMap[code] = { logins:[], logouts:[] };
   });
 
   const fmtTime = (iso)=> new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   const userCodes = Object.keys(userMap).sort();
+  const anyPreload = Object.keys(preloadCounts).length > 0;
   const summaryBox = document.getElementById('activityUserSummary');
   if(!userCodes.length){
     summaryBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No activity recorded for '+date+'.</div>';
@@ -2885,9 +2890,11 @@ async function renderActivityLog(){
       const logoutsText = u.logouts.length ? u.logouts.sort().map(fmtTime).join(', ') : '—';
       const pending = pendingCounts[code] || 0;
       const delivered = completedCounts[code] || 0;
-      return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+loginsText+'</td><td>'+logoutsText+'</td><td class="center">'+pending+'</td><td class="center">'+delivered+'</td></tr>';
+      return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+loginsText+'</td><td>'+logoutsText+'</td><td class="center">'+pending+'</td><td class="center">'+delivered+'</td>'+(anyPreload ? '<td class="center">'+(preloadCounts[code]||0)+'</td>' : '')+'</tr>';
     }).join('');
-    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Transit</th><th>Delivered</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    const sumOf = o => Object.values(o).reduce((a,b)=>a+b,0);
+    summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Transit</th><th>Delivered</th>'+(anyPreload ? '<th>Preloaded</th>' : '')+'</tr></thead><tbody>'+rows+'</tbody></table>'
+      + '<div class="subtext" style="margin-top:10px; margin-bottom:0;">Delivered counts trolleys (an order with 2 trolleys counts 2) and excludes preloaded orders, so the total here, <b>'+sumOf(completedCounts)+'</b>, matches \u201cTotal trolleys delivered\u201d above.'+(anyPreload ? ' Preloaded deliveries ('+sumOf(preloadCounts)+') are shown separately.' : '')+'</div>';
   }
 
   // Order-level detail, consolidated across every user for this date.
