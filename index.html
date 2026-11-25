@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.80.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.89.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -123,6 +123,9 @@
   }
   header.appbar .today{font-family:'IBM Plex Mono',monospace; font-size:10px; color:#C9D4DC;}
   header.appbar .weather{font-family:'IBM Plex Mono',monospace; font-size:11px; color:#9FB0BF;}
+  /* sits in the empty strip under the date / weather / user badge, bottom-right — absolutely positioned so it never changes the header's height */
+  header.appbar .store-label{position:absolute; right:18px; bottom:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:#C9D4DC; white-space:nowrap; text-align:right; line-height:1;}
+  header.appbar .store-label:empty{display:none;}
 
   nav.tabs{
     display:flex; gap:4px; background:var(--surface);
@@ -437,6 +440,7 @@
 
   @media (max-width:600px){
     header.appbar .today, header.appbar .weather{ display:none; }
+    header.appbar .store-label{ font-size:9px; }
     .zone-card .meta-row{ flex-wrap:wrap; gap:8px 18px; }
     .dash-stats{ grid-template-columns:1fr; }
   }
@@ -483,9 +487,14 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <input type="text" id="adminNewStoreCode" placeholder="Store code (e.g. 558)" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
         <input type="text" id="adminNewStoreName" placeholder="Location name (e.g. Melbourne Airport)" style="flex:2; min-width:180px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <input type="text" id="adminNewStoreLat" placeholder="Latitude (e.g. -31.95)" inputmode="decimal" autocomplete="off" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
+        <input type="text" id="adminNewStoreLon" placeholder="Longitude (e.g. 115.86)" inputmode="decimal" autocomplete="off" style="flex:1; min-width:120px; padding:9px 11px; border:1.5px solid var(--line); border-radius:8px; font-size:14px;"/>
         <button class="btn btn-primary" id="adminAddStoreBtn">Add store</button>
         <button class="btn btn-ghost" id="adminStoreCancelEdit" style="display:none;">Cancel edit</button>
       </div>
+      <div class="subtext" style="margin-top:6px; margin-bottom:0; font-size:12px;">Latitude and longitude are optional — leave them blank to look the location up by name. Enter them (south and west are negative) if the name isn’t recognised.</div>
       <div id="adminStoreStatus" class="subtext" style="margin-top:8px; margin-bottom:0;"></div>
       <div id="adminStoreList" style="margin-top:14px;"></div>
     </div>
@@ -512,8 +521,9 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.80.0b</span>
+    <span class="version-tag" id="versionTagRight">3.89.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
+      <span class="store-label" id="storeLabel"></span>
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
     </div>
@@ -896,11 +906,15 @@
           </div>
           <div id="repUfStep2" style="display:none; margin-top:12px;">
             <div class="subtext" id="repUfOrderInfo" style="margin-bottom:8px;"></div>
+            <span class="lbl">Case no.</span>
+            <input type="text" id="repUfCaseNo" placeholder="Case No." autocomplete="off" style="width:100%; margin-bottom:10px;"/>
             <span class="lbl">Reason (tick all that apply)</span>
             <details class="reasons-dd" id="repReasonsDd">
               <summary id="repReasonsSummary">Select reasons…</summary>
               <div class="reasons-panel" id="repReasonsPanel"></div>
             </details>
+            <span class="lbl" style="display:block; margin-top:10px;">Notified CR?</span>
+            <select id="repUfNotified" style="width:100%;"><option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option></select>
             <div class="btn-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="repUfAddBtn" type="button">Add order</button>
               <button class="btn btn-ghost" id="repUfCancelBtn" type="button">Cancel</button>
@@ -1544,7 +1558,7 @@ function applyTranslations(){
 /* ---- Shared (Firebase-backed) storage: all real app data, synced across every device ---- */
 let currentStoreCode = null;
 let currentUserCode = null;
-let currentUserRole = null; // 'manager' | 'coworker'
+let currentUserRole = null; // 'manager' | 'coworker' | 'viewer'
 let currentUserIsMasterAccess = false; // true for VJ01 or any other admin-created master code — full feature access, not just standard manager
 function storeKey(suffix){
   return 'loadout:'+currentStoreCode+':'+suffix;
@@ -1861,6 +1875,20 @@ function weatherSymbolForCode(code){
   return '';
 }
 
+// City / location name and store code, shown in the header next to the date and weather.
+async function updateStoreLabel(){
+  const el = document.getElementById('storeLabel');
+  if(!el) return;
+  if(!currentStoreCode){ el.textContent = ''; return; }
+  let name = '';
+  try{
+    const registry = await loadStoreRegistry();
+    const loc = registry[currentStoreCode] || FALLBACK_STORE_LOCATIONS[currentStoreCode];
+    name = loc && loc.name ? loc.name : '';
+  }catch(e){ const loc = FALLBACK_STORE_LOCATIONS[currentStoreCode]; name = loc ? loc.name : ''; }
+  el.textContent = (name ? name+' \u00b7 ' : '')+'Store '+currentStoreCode;
+}
+
 async function fetchWeather(){
   const el = document.getElementById('weatherLabel');
   if(!el || !currentStoreCode) return;
@@ -1868,7 +1896,7 @@ async function fetchWeather(){
   const loc = registry[currentStoreCode] || FALLBACK_STORE_LOCATIONS[currentStoreCode];
   if(!loc || loc.lat===undefined || loc.lon===undefined) return; // no known coordinates for this store yet — nothing to show
   try{
-    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+loc.lat+'&longitude='+loc.lon+'&current=temperature_2m,weather_code&timezone=Australia%2FAdelaide';
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+loc.lat+'&longitude='+loc.lon+'&current=temperature_2m,weather_code&timezone=auto';
     const res = await fetch(url);
     if(!res.ok) throw new Error('weather fetch failed');
     const data = await res.json();
@@ -2221,6 +2249,7 @@ let reportInterval = null;
 let preloadInterval = null;
 let searchHasRun = false;
 function showView(name){
+  if(currentUserRole==='viewer' && !VIEWER_VIEWS.includes(name)) name = 'dashboard'; // view-only users never reach other pages
   checkDateRollover();
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -2476,6 +2505,7 @@ async function initApp(){
   await cleanupOldData();
   refreshDashboard();
   dashboardInterval = setInterval(refreshDashboard, 3000);
+  updateStoreLabel();
   fetchWeather();
   setInterval(fetchWeather, 20*60*1000); // weather doesn't need second-by-second accuracy
   await renderZoneAssignment();
@@ -2525,8 +2555,25 @@ async function isMasterAccessCode(code){
 }
 
 const MANAGER_CODES = ['M01','TL01','LL01','NTL01','VJ01'];
+// The master user's internal ID stays 'VJ01' (so all history and permission checks carry on), but 'VJ01'
+// can no longer be typed to log in. The master login code is NOT stored in this file — only a salted,
+// deliberately slow hash of it (PBKDF2, 200,000 rounds), so it can't simply be read from the page source.
+const MASTER_ID = 'VJ01';
+const MASTER_LOGIN_SALT = 'iload-master-v1';
+const MASTER_LOGIN_HASH = 'b4f01f04cab04fa8dd38685ab4e391d12b89a99c162adbd2f3603072f014397d';
+async function isMasterLoginCode(typed){
+  try{
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(typed), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:new TextEncoder().encode(MASTER_LOGIN_SALT), iterations:200000 }, key, 256);
+    return Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,'0')).join('') === MASTER_LOGIN_HASH;
+  }catch(e){ return false; }
+}
 const COWORKER_CODES = ['CW01','CW02','CW03','CW04','CW05','CW06','CW07','CW08','CW09','CW10','N01','N02','N03','N04','N05','N06','N07'];
 const MANAGER_ONLY_VIEWS = ['upload','preload','forms','report'];
+// View-only access (e.g. CR01): the Dashboard and Records pages and nothing else — no scanning,
+// uploading, forms, reports or Activity Log.
+const VIEWER_CODES = ['CR01'];
+const VIEWER_VIEWS = ['dashboard','search'];
 const ACTIVITY_LOG_CODES = ['M01','TL01','NTL01','VJ01']; // LL01 is a manager but does NOT get this page
 
 async function logActivity(userCode, event){
@@ -2870,9 +2917,11 @@ async function renderActivityLog(){
   }
 
   const userMap = {};
+  const viewerMap = {}; // view-only users (e.g. CR01) can't scan, so they're listed separately with just their login times
   allUsersLog.forEach(e=>{
-    if(!userMap[e.userCode]) userMap[e.userCode] = { logins:[], logouts:[] };
-    (e.event==='login' ? userMap[e.userCode].logins : userMap[e.userCode].logouts).push(e.ts);
+    const m = VIEWER_CODES.includes(e.userCode) ? viewerMap : userMap;
+    if(!m[e.userCode]) m[e.userCode] = { logins:[], logouts:[] };
+    (e.event==='login' ? m[e.userCode].logins : m[e.userCode].logouts).push(e.ts);
   });
   Object.keys(completedCounts).concat(Object.keys(pendingCounts), Object.keys(preloadCounts)).forEach(code=>{
     if(!userMap[code]) userMap[code] = { logins:[], logouts:[] };
@@ -2882,8 +2931,17 @@ async function renderActivityLog(){
   const userCodes = Object.keys(userMap).sort();
   const anyPreload = Object.keys(preloadCounts).length > 0;
   const summaryBox = document.getElementById('activityUserSummary');
+  const viewerCodes = Object.keys(viewerMap).sort();
+  const viewerHtml = viewerCodes.length
+    ? '<div style="margin-top:16px; font-weight:700; font-size:14px;">View-only access <span class="subtext" style="margin:0; font-weight:400;">\u00b7 Dashboard and Records only</span></div>'
+      + '<table style="margin-top:6px;"><thead><tr><th>User</th><th>Login</th><th>Logout</th></tr></thead><tbody>'
+      + viewerCodes.map(code=>{
+          const u = viewerMap[code];
+          return '<tr><td class="mono">'+escapeHtml(code)+'</td><td>'+(u.logins.length ? u.logins.sort().map(fmtTime).join(', ') : '\u2014')+'</td><td>'+(u.logouts.length ? u.logouts.sort().map(fmtTime).join(', ') : '\u2014')+'</td></tr>';
+        }).join('')+'</tbody></table>'
+    : '';
   if(!userCodes.length){
-    summaryBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No activity recorded for '+date+'.</div>';
+    summaryBox.innerHTML = (viewerHtml || '<div class="subtext" style="margin-bottom:0;">No activity recorded for '+date+'.</div>');
   }else{
     const rows = userCodes.map(code=>{
       const u = userMap[code];
@@ -2895,7 +2953,8 @@ async function renderActivityLog(){
     }).join('');
     const sumOf = o => Object.values(o).reduce((a,b)=>a+b,0);
     summaryBox.innerHTML = '<table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Transit</th><th>Delivered</th>'+(anyPreload ? '<th>Preloaded</th>' : '')+'</tr></thead><tbody>'+rows+'</tbody></table>'
-      + '<div class="subtext" style="margin-top:10px; margin-bottom:0;">Delivered counts trolleys (an order with 2 trolleys counts 2) and excludes preloaded orders, so the total here, <b>'+sumOf(completedCounts)+'</b>, matches \u201cTotal trolleys delivered\u201d above.'+(anyPreload ? ' Preloaded deliveries ('+sumOf(preloadCounts)+') are shown separately.' : '')+'</div>';
+      + '<div class="subtext" style="margin-top:10px; margin-bottom:0;">Delivered counts trolleys (an order with 2 trolleys counts 2) and excludes preloaded orders, so the total here, <b>'+sumOf(completedCounts)+'</b>, matches \u201cTotal trolleys delivered\u201d above.'+(anyPreload ? ' Preloaded deliveries ('+sumOf(preloadCounts)+') are shown separately.' : '')+'</div>'
+      + viewerHtml;
   }
 
   // Order-level detail, consolidated across every user for this date.
@@ -3538,13 +3597,14 @@ function applyRoleUI(role){
     const view = btn.dataset.view;
     const isManagerOnly = MANAGER_ONLY_VIEWS.includes(view);
     let hide = isManagerOnly && role==='coworker';
+    if(role==='viewer') hide = !VIEWER_VIEWS.includes(view);
     if(N_CODE_EXTRA_ACCESS_VIEWS.includes(view) && N_CODES.includes(currentUserCode)) hide = false;
     btn.style.display = hide ? 'none' : '';
   });
   const activityBtn = document.getElementById('activityTabBtn');
   activityBtn.style.display = (ACTIVITY_LOG_CODES.includes(currentUserCode) || currentUserIsMasterAccess || role==='coworker') ? '' : 'none';
-  document.getElementById('userBadge').textContent = currentUserCode;
-  showView(role==='manager' ? 'dashboard' : 'scan');
+  document.getElementById('userBadge').textContent = currentUserCode===MASTER_ID ? 'Master' : currentUserCode; // the master login code is never shown on screen
+  showView(role==='manager' || role==='viewer' ? 'dashboard' : 'scan');
 }
 
 async function showLoginGate(stage){
@@ -3783,12 +3843,14 @@ document.getElementById('adminBackBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('userCodeSubmit').addEventListener('click', async ()=>{
-  const val = document.getElementById('userCodeInput').value.trim().toUpperCase();
+  let val = document.getElementById('userCodeInput').value.trim().toUpperCase();
   let role = null;
   let isMaster = false;
-  if(MANAGER_CODES.includes(val)) role = 'manager';
+  if(val!==MASTER_ID && MANAGER_CODES.includes(val)) role = 'manager';
   else if(COWORKER_CODES.includes(val)) role = 'coworker';
-  else if(await isMasterAccessCode(val)){ role = 'manager'; isMaster = true; } // master codes get full feature access, for any store
+  else if(VIEWER_CODES.includes(val)) role = 'viewer';
+  else if(val!==MASTER_ID && await isMasterAccessCode(val)){ role = 'manager'; isMaster = true; }
+  else if(val!==MASTER_ID && await isMasterLoginCode(val)){ role = 'manager'; val = MASTER_ID; } // the master login code signs in as the master user (admin-created master codes: full access, any store)
   if(!role){
     document.getElementById('userCodeError').textContent = 'Unrecognised user code.';
     return;
@@ -5830,10 +5892,16 @@ function confirmDialog(title, bodyHtml, proceedLabel){
    reveal this hash, and a determined person could look it up or crack it).
    Storing the SHA-256 hash rather than the password itself, so it isn't
    sitting in plain text in the file. */
-const ADMIN_PASSWORD_HASH = '611801d2f5a118c2ab16abfe23a293f504cace81ab8fcf80285754be7ba2da71';
+const ADMIN_PASSWORD_SALT = 'iload-admin-v1';
+const ADMIN_PASSWORD_HASH = '43861ef1ba462c35d08fbccf1b79d90471f50fc6ca5ca561a884cfdd21360438'; // PBKDF2-SHA256, 200,000 rounds — the password itself is not stored anywhere in this file
 
 let adminUnlockedThisSession = false; // resets on page reload/logout by design — re-enter each session
 
+async function adminPasswordHash(text){
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(text), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:new TextEncoder().encode(ADMIN_PASSWORD_SALT), iterations:200000 }, key, 256);
+  return Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 async function sha256Hex(text){
   const enc = new TextEncoder().encode(text);
   const buf = await crypto.subtle.digest('SHA-256', enc);
@@ -5861,7 +5929,8 @@ function requireAdminUnlock(){
     }
     async function onSubmit(){
       const entered = input.value;
-      const hash = await sha256Hex(entered);
+      let hash = '';
+      try{ hash = await adminPasswordHash(entered); }catch(e){}
       if(hash === ADMIN_PASSWORD_HASH){
         adminUnlockedThisSession = true;
         cleanup(true);
@@ -5965,6 +6034,8 @@ async function startEditStore(code){
   codeInput.value = code;
   codeInput.disabled = true; // the code is the database key — changing it would orphan the store's existing data, so only the name (and re-resolved coordinates) can be edited
   document.getElementById('adminNewStoreName').value = loc.name || '';
+  document.getElementById('adminNewStoreLat').value = loc.lat!==undefined ? loc.lat : '';
+  document.getElementById('adminNewStoreLon').value = loc.lon!==undefined ? loc.lon : '';
   document.getElementById('adminAddStoreBtn').textContent = 'Save changes';
   document.getElementById('adminStoreCancelEdit').style.display = '';
   document.getElementById('adminStoreStatus').textContent = 'Editing store '+code+'.';
@@ -5976,6 +6047,8 @@ function cancelEditStore(){
   codeInput.value = '';
   codeInput.disabled = false;
   document.getElementById('adminNewStoreName').value = '';
+  document.getElementById('adminNewStoreLat').value = '';
+  document.getElementById('adminNewStoreLon').value = '';
   document.getElementById('adminAddStoreBtn').textContent = 'Add store';
   document.getElementById('adminStoreCancelEdit').style.display = 'none';
   document.getElementById('adminStoreStatus').textContent = '';
@@ -6009,6 +6082,7 @@ document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>
   const code = document.getElementById('adminNewStoreCode').value.trim();
   const name = document.getElementById('adminNewStoreName').value.trim();
   const isEditing = !!editingStoreCode;
+  statusEl.style.color = '';
 
   if(!code){ statusEl.textContent = 'Enter a store code.'; return; }
   if(!name){ statusEl.textContent = 'Enter a location name.'; return; }
@@ -6021,20 +6095,34 @@ document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>
     return;
   }
 
-  // Coordinates are resolved automatically from the location name, rather
-  // than requiring manual entry — weather just won't show for this store if
-  // the lookup fails, but the store itself (what actually matters for
-  // login) still registers fine either way.
-  statusEl.textContent = 'Looking up '+name+'…';
-  let lat, lon;
-  try{
-    const geoRes = await fetch('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(name)+'&count=1&language=en&format=json');
-    const geoData = await geoRes.json();
-    if(geoData && geoData.results && geoData.results[0]){
-      lat = geoData.results[0].latitude;
-      lon = geoData.results[0].longitude;
+  // Coordinates: typed latitude/longitude win; otherwise they are looked up from the location name
+  // (trying a few simpler spellings, preferring an Australian match). A lookup failure never blocks
+  // registering the store — weather just won't show until coordinates are added via Edit.
+  const latTxt = document.getElementById('adminNewStoreLat').value.trim();
+  const lonTxt = document.getElementById('adminNewStoreLon').value.trim();
+  let lat, lon, source = '';
+  if(latTxt || lonTxt){
+    const la = Number(latTxt), lo = Number(lonTxt);
+    if(!latTxt || !lonTxt || !isFinite(la) || !isFinite(lo) || la<-90 || la>90 || lo<-180 || lo>180){
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'Enter both latitude (-90 to 90) and longitude (-180 to 180) as numbers, or leave both blank.';
+      return;
     }
-  }catch(e){ /* geocoding failed — proceed without coordinates */ }
+    lat = la; lon = lo; source = 'entered';
+  }else{
+    statusEl.style.color = '';
+    statusEl.textContent = 'Looking up '+name+'\u2026';
+    const tries = [...new Set([name, name.replace(/[0-9]+/g,'').replace(/\s+/g,' ').trim(), name.split(/\s+/)[0]])].filter(Boolean);
+    for(const q of tries){
+      try{
+        const geoRes = await fetch('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(q)+'&count=10&language=en&format=json');
+        const geoData = await geoRes.json();
+        const results = (geoData && geoData.results) || [];
+        const hit = results.find(r=>r.country_code==='AU') || results[0];
+        if(hit){ lat = hit.latitude; lon = hit.longitude; source = 'looked up'; break; }
+      }catch(e){ /* try the next spelling */ }
+    }
+  }
 
   registry[code] = (lat!==undefined && lon!==undefined) ? { name, lat, lon } : { name };
   const ok = await saveStoreRegistry(registry);
@@ -6042,10 +6130,22 @@ document.getElementById('adminAddStoreBtn').addEventListener('click', async ()=>
 
   const verb = isEditing ? 'updated' : 'registered';
   if(isEditing) cancelEditStore(); // resets the form back to "add" mode
-  else{ document.getElementById('adminNewStoreCode').value = ''; document.getElementById('adminNewStoreName').value = ''; }
-  statusEl.innerHTML = (lat!==undefined)
-    ? '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' '+verb+'.</span>'
-    : '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' '+verb+', but the location wasn\u2019t recognised — weather won\u2019t show for it. Try a more specific name to fix this later.</span>';
+  else{ ['adminNewStoreCode','adminNewStoreName','adminNewStoreLat','adminNewStoreLon'].forEach(id=>{ document.getElementById(id).value = ''; }); }
+
+  if(lat===undefined){
+    statusEl.innerHTML = '<span style="color:var(--warning); font-weight:700;">Store '+escapeHtml(code)+' '+verb+', but the location wasn\u2019t recognised \u2014 weather won\u2019t show for it. Click Edit on its row and enter its latitude and longitude.</span>';
+  }else{
+    // Fetch the weather right away so the result is visible, not assumed.
+    let wx = '';
+    try{
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&current=temperature_2m,weather_code&timezone=auto');
+      const d = await r.json();
+      const t = d && d.current && d.current.temperature_2m;
+      if(t!==undefined && t!==null) wx = ' Weather check: '+weatherSymbolForCode(d.current.weather_code)+' '+Math.round(t)+'\u00b0C.';
+    }catch(e){}
+    statusEl.innerHTML = '<span style="color:var(--success); font-weight:700;">Store '+escapeHtml(code)+' '+verb+' ('+(source==='entered' ? 'coordinates entered' : 'location found')+': '+Number(lat).toFixed(4)+', '+Number(lon).toFixed(4)+').'+escapeHtml(wx)+'</span>'
+      + (wx ? '' : ' <span class="subtext" style="margin:0;">Couldn\u2019t fetch the weather just now \u2014 it will show in the header once online.</span>');
+  }
   await renderAdminStoreList();
 });
 
@@ -6061,7 +6161,7 @@ document.getElementById('adminCreateMasterBtn').addEventListener('click', async 
   const statusEl = document.getElementById('adminMasterStatus');
   const code = document.getElementById('adminMasterCodeInput').value.trim().toUpperCase();
   if(!code){ statusEl.textContent = 'Enter a code.'; return; }
-  if(MANAGER_CODES.includes(code) || COWORKER_CODES.includes(code)){
+  if(MANAGER_CODES.includes(code) || COWORKER_CODES.includes(code) || VIEWER_CODES.includes(code)){
     statusEl.textContent = 'That code is already in use as a regular user code.';
     return;
   }
@@ -6921,7 +7021,8 @@ async function liveOrderLookup(){
         + (h.driverNo ? 'Driver <b class="mono">'+escapeHtml(h.driverNo)+'</b>' : '')
         + (h.zone ? ' \u00b7 Zone <b class="mono">'+escapeHtml(h.zone)+'</b>' : '')
         + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
-    + '<div style="color:var(--danger); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(reasonsText(h.reasons))+'</b></div></div>'
+    + '<div style="color:var(--danger); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(reasonsText(h.reasons))+'</b></div>'
+    + '<div style="color:var(--danger); font-size:14px; margin-top:4px;">Case no. <b class="mono">'+escapeHtml(h.caseNo||'\u2014')+'</b> \u00b7 Notified CR: <b>'+notifiedCRLabel(h.notifiedCR)+'</b></div></div>'
     + failedCountBadge(failedHits.length)
     + '</div>' }));
 
@@ -7088,7 +7189,8 @@ async function renderFailedSearch(resultsEl){
             + (u.driverNo ? 'Driver <b class="mono">'+escapeHtml(u.driverNo)+'</b>' : '')
             + (u.zone ? ' \u00b7 Zone <b class="mono">'+escapeHtml(u.zone)+'</b>' : '')
             + (u.suburb ? ' \u00b7 <b>'+escapeHtml(u.suburb)+'</b>' : '') + '</div>' : '')
-        + '<div style="font-size:14px; margin-top:4px;">Reason: <b>'+escapeHtml(reasonsText(u.reasons))+'</b></div></div>'
+        + '<div style="font-size:14px; margin-top:4px;">Reason: <b>'+escapeHtml(reasonsText(u.reasons))+'</b></div>'
+        + '<div style="font-size:14px; margin-top:2px;">Case no. <b class="mono">'+escapeHtml(u.caseNo||'\u2014')+'</b> \u00b7 Notified CR: <b>'+notifiedCRLabel(u.notifiedCR)+'</b></div></div>'
         + failedCountBadge(failCount[u.orderNo] || 1) + '</div>';
     }).join('');
   }
@@ -7238,9 +7340,11 @@ function parseUnfulfilled(v){
   try{
     const l = JSON.parse(v||'[]');
     return Array.isArray(l) ? l.filter(x=>x && x.orderNo).map(x=>({ orderNo:String(x.orderNo), reasons:(x.reasons||[]).filter(r=>FULFIL_REASONS.includes(r)),
-      wentOut:x.wentOut||'', driverNo:x.driverNo||'', zone:x.zone||'', suburb:x.suburb||'' })) : [];
+      wentOut:x.wentOut||'', driverNo:x.driverNo||'', zone:x.zone||'', suburb:x.suburb||'',
+      caseNo:String(x.caseNo||''), notifiedCR:(x.notifiedCR==='yes'||x.notifiedCR==='no') ? x.notifiedCR : '' })) : [];
   }catch(e){ return []; }
 }
+function notifiedCRLabel(v){ return v==='yes' ? 'Yes' : v==='no' ? 'No' : '\u2014'; }
 function reasonsText(list){ return (list && list.length) ? list.join(', ') : '\u2014'; }
 (function buildReasonsPanel(){
   document.getElementById('repReasonsPanel').innerHTML = FULFIL_REASONS.map(r=>
@@ -7259,12 +7363,14 @@ function ufResetStep(){
   document.getElementById('repUfStep2').style.display = 'none';
   document.querySelectorAll('#repReasonsPanel input[type=checkbox]').forEach(cb=>{ cb.checked = false; });
   document.getElementById('repReasonsDd').open = false;
+  document.getElementById('repUfCaseNo').value = '';
+  document.getElementById('repUfNotified').value = '';
   ufSyncSummary();
 }
 function renderUfList(){
   const list = parseUnfulfilled(document.getElementById('repUnfulfilled').value);
   document.getElementById('repUfList').innerHTML = list.length
-    ? '<div class="uf-list">'+list.map((u,i)=>'<div class="uf-item"><div><b class="mono">'+escapeHtml(u.orderNo)+'</b><div class="subtext" style="margin:2px 0 0;">'+escapeHtml(reasonsText(u.reasons))+'</div></div>'
+    ? '<div class="uf-list">'+list.map((u,i)=>'<div class="uf-item"><div><b class="mono">'+escapeHtml(u.orderNo)+'</b><div class="subtext" style="margin:2px 0 0;">'+escapeHtml(reasonsText(u.reasons))+'</div><div class="subtext" style="margin:2px 0 0;">Case no. <b class="mono">'+escapeHtml(u.caseNo||'\u2014')+'</b> \u00b7 Notified CR: <b>'+notifiedCRLabel(u.notifiedCR)+'</b></div></div>'
         + '<div class="uf-actions"><button type="button" class="uf-edit" data-uf-edit="'+i+'" title="Edit" aria-label="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button type="button" class="zone-assign-delete" data-uf-del="'+i+'" title="Remove" aria-label="Remove">\u2715</button></div></div>').join('')+'</div>'
     : '';
 }
@@ -7457,7 +7563,8 @@ async function ufNext(){
               : ' \u00b7 not found in the last few days\u2019 manifests (it will still be recorded)')
     + ' \u2014 why did it fail?';
   document.getElementById('repUfStep2').style.display = 'block';
-  document.getElementById('repReasonsDd').open = true;
+  document.getElementById('repReasonsDd').open = false;
+  document.getElementById('repUfCaseNo').focus(); // case no. is asked first, then the reasons
 }
 document.getElementById('repUfNextBtn').addEventListener('click', ufNext);
 document.getElementById('repUfOrderNo').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); ufNext(); } });
@@ -7468,9 +7575,13 @@ function ufAdd(){
   const msg = document.getElementById('repUfMsg');
   const reasons = ufTicked();
   if(!ufPendingOrder){ msg.textContent = 'Enter the order no. and press Next first.'; return false; }
+  const caseNo = document.getElementById('repUfCaseNo').value.trim();
+  const notifiedCR = document.getElementById('repUfNotified').value;
+  if(!caseNo){ msg.style.color = 'var(--danger)'; msg.textContent = 'Enter the case no.'; document.getElementById('repUfCaseNo').focus(); return false; }
   if(!reasons.length){ msg.style.color = 'var(--danger)'; msg.textContent = 'Tick at least one reason.'; return false; }
+  if(!notifiedCR){ msg.style.color = 'var(--danger)'; msg.textContent = 'Answer \u201cNotified CR?\u201d \u2014 Yes or No.'; return false; }
   const list = parseUnfulfilled(document.getElementById('repUnfulfilled').value);
-  const entry = Object.assign({ orderNo: ufPendingOrder, reasons }, ufPendingInfo || {});
+  const entry = Object.assign({ orderNo: ufPendingOrder, reasons, caseNo, notifiedCR }, ufPendingInfo || {});
   if(ufEditIdx >= 0 && ufEditIdx < list.length) list[ufEditIdx] = entry; else list.push(entry);
   document.getElementById('repUnfulfilled').value = JSON.stringify(list);
   document.getElementById('repUfOrderNo').value = '';
@@ -7507,6 +7618,8 @@ function ufStartEdit(i){
   document.getElementById('repUfOrderInfo').innerHTML = 'Editing order <b class="mono">'+escapeHtml(u.orderNo)+'</b>'
     + (u.wentOut ? ' \u00b7 went out '+formatDDMM(u.wentOut) : '') + (u.driverNo ? ' \u00b7 Driver '+escapeHtml(u.driverNo) : '') + (u.suburb ? ' \u00b7 '+escapeHtml(u.suburb) : '');
   document.querySelectorAll('#repReasonsPanel input[type=checkbox]').forEach(cb=>{ cb.checked = u.reasons.includes(cb.value); });
+  document.getElementById('repUfCaseNo').value = u.caseNo || '';
+  document.getElementById('repUfNotified').value = u.notifiedCR || '';
   ufSyncSummary();
   document.getElementById('repUfAddBtn').textContent = 'Update order';
   document.getElementById('repUfStep2').style.display = 'block';
@@ -7695,7 +7808,7 @@ async function computeReportData(date){
     failedRecords: records.filter(r=>isReportFailed(r, date)),
     externalReturns,
     unfulfilled: manual.repFailed==='yes'
-      ? parseUnfulfilled(manual.repUnfulfilled).map(u=>({ orderNo:u.orderNo, wentOut:u.wentOut, driverNo:u.driverNo, zone:u.zone, suburb:u.suburb, reasons:u.reasons }))
+      ? parseUnfulfilled(manual.repUnfulfilled).map(u=>({ orderNo:u.orderNo, wentOut:u.wentOut, driverNo:u.driverNo, zone:u.zone, suburb:u.suburb, reasons:u.reasons, caseNo:u.caseNo, notifiedCR:u.notifiedCR }))
       : []
   };
 }
@@ -7753,8 +7866,8 @@ function buildReportHtml(date, rd){
     + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Driver No.</th><th>Zone</th><th>Suburb</th></tr></thead><tbody>'+failedRows+'</tbody></table>'
 
     + (m.repFailed==='yes' ? '<div class="zqr-section-label">FAILED ORDERS \u2014 REASONS</div>'
-        + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Went out</th><th>Driver No.</th><th>Zone</th><th>Suburb</th><th>Reason</th></tr></thead><tbody>'
-        + (rd.unfulfilled.length ? rd.unfulfilled.map(u=>'<tr><td class="mono">'+escapeHtml(u.orderNo)+'</td><td>'+escapeHtml(u.wentOut ? formatDDMM(u.wentOut) : '')+'</td><td>'+escapeHtml(u.driverNo)+'</td><td>'+escapeHtml(u.zone)+'</td><td>'+escapeHtml(u.suburb)+'</td><td>'+escapeHtml(reasonsText(u.reasons))+'</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:#666;">No orders entered</td></tr>')
+        + '<table class="zqr-table"><thead><tr><th>Order No.</th><th>Went out</th><th>Driver No.</th><th>Zone</th><th>Suburb</th><th>Case No.</th><th>Reason</th><th>Notified CR?</th></tr></thead><tbody>'
+        + (rd.unfulfilled.length ? rd.unfulfilled.map(u=>'<tr><td class="mono">'+escapeHtml(u.orderNo)+'</td><td>'+escapeHtml(u.wentOut ? formatDDMM(u.wentOut) : '')+'</td><td>'+escapeHtml(u.driverNo)+'</td><td>'+escapeHtml(u.zone)+'</td><td>'+escapeHtml(u.suburb)+'</td><td class="mono">'+escapeHtml(u.caseNo||'')+'</td><td>'+escapeHtml(reasonsText(u.reasons))+'</td><td>'+notifiedCRLabel(u.notifiedCR)+'</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:#666;">No orders entered</td></tr>')
         + '</tbody></table>' : '')
 
     + '<div class="zqr-section-label">EXTERNAL RETURNS ASSIGNED</div>'
@@ -7886,8 +7999,8 @@ async function drawReportPdf(doc, date, rd){
 
   if(m.repFailed==='yes'){
     sectionLabel('FAILED ORDERS \u2014 REASONS');
-    dataTable(['Order No.','Went out','Driver No.','Zone','Suburb','Reason'],
-      rd.unfulfilled.length ? rd.unfulfilled.map(u=>[u.orderNo, u.wentOut ? formatDDMM(u.wentOut) : '', u.driverNo, u.zone, u.suburb, reasonsText(u.reasons)]) : [['No orders entered','','','','','']]);
+    dataTable(['Order No.','Went out','Driver No.','Zone','Suburb','Case No.','Reason','Notified CR?'],
+      rd.unfulfilled.length ? rd.unfulfilled.map(u=>[u.orderNo, u.wentOut ? formatDDMM(u.wentOut) : '', u.driverNo, u.zone, u.suburb, u.caseNo||'', reasonsText(u.reasons), notifiedCRLabel(u.notifiedCR)]) : [['No orders entered','','','','','','','']]);
   }
 
   sectionLabel('EXTERNAL RETURNS ASSIGNED');
