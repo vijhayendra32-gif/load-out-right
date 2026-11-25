@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.78.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.80.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -321,6 +321,7 @@
   .empu-qr-grid{ display:grid; gap:14px 20px; }
   .empu-qr-cell{ display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; break-inside:avoid; }
   .empu-qr-driver{ font-weight:700; font-size:36px; font-family:'Barlow Semi Condensed',sans-serif; }
+  .empu-qr-vehicle{ font-family:'Barlow Semi Condensed',sans-serif; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); line-height:1.1; margin-top:2px; }
   .empu-qr-code{ margin-left:auto; line-height:0; }
 
   /* Report */
@@ -511,7 +512,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.78.0b</span>
+    <span class="version-tag" id="versionTagRight">3.80.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="today mono" id="todayLabel"></span>
       <span class="weather mono" id="weatherLabel"></span>
@@ -1060,7 +1061,7 @@
 
     <div class="card" id="activityOrderDetailCard" data-acttab="users">
       <h2>Order detail by user</h2>
-      <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it — all users.</div>
+      <div class="subtext">Every in-transit and delivered order for the date above, by who scanned/delivered it — all users. VJ01 / master access can delete an order’s transaction with the ✕ on its row.</div>
       <div id="activityOrderDetail"></div>
     </div>
 
@@ -2904,7 +2905,7 @@ async function renderActivityLog(){
     day.records.forEach(r=>{
       if(r.status==='delivered' && r.completedBy){
         activityCredits(r).forEach(c=>{
-          detailRows.push({ user:c.user, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: c.at ? fmtTime(c.at) : '—', note:[r.preloaded?'Preloaded':'', c.note||''].filter(Boolean).join(' \u00b7 ') });
+          detailRows.push({ user:c.user, orderNo:r.orderNo, zone:r.zone, status:'Delivered', time: c.at ? fmtTime(c.at) : '—', note:[r.preloaded?'Preloaded':'', c.note||''].filter(Boolean).join(' \u00b7 '), preloaded:!!r.preloaded });
         });
       }else if(!r.preloaded && r.scannedBy && r.status!=='delivered'){
         detailRows.push({ user:r.scannedBy, orderNo:r.orderNo, zone:r.zone, status:'In Transit', time:'—' });
@@ -2915,10 +2916,13 @@ async function renderActivityLog(){
   if(!detailRows.length){
     detailBox.innerHTML = '<div class="subtext" style="margin-bottom:0;">No in-transit or delivered orders for '+date+'.</div>';
   }else{
+    const canDel = canClearScanData();
     const rowsHtml = detailRows.map(d=>
       '<tr><td class="mono">'+escapeHtml(d.user)+'</td><td class="mono">'+escapeHtml(d.orderNo)+'</td><td>'+escapeHtml(d.zone)+'</td>'
       + '<td class="center"><span class="badge '+(d.status==='Delivered'?'delivered':'pending')+'">'+d.status+'</span>'+(d.note ? '<div class="subtext" style="margin:2px 0 0; font-size:11px;">'+escapeHtml(d.note)+'</div>' : '')+'</td>'
-      + '<td class="mono">'+d.time+'</td></tr>'
+      + '<td class="mono">'+d.time+'</td>'
+      + (canDel ? '<td class="center">'+(d.preloaded ? '<span class="subtext" style="margin:0;">\u2014</span>' : '<button class="btn btn-ghost btn-sm detail-del-btn" data-order="'+escapeHtml(d.orderNo)+'" title="Delete this order\u2019s transaction" aria-label="Delete order '+escapeHtml(d.orderNo)+'" style="padding:4px 9px; color:var(--danger); border-color:var(--danger);">\u2715</button>')+'</td>' : '')
+      + '</tr>'
     ).join('');
     // Reconciliation with the Dashboard's EMPU figure, so a gap is visible rather than silent.
     const dashEmpu = day.records.filter(r=>(r.preloaded || !isPreload(r)) && r.status==='delivered' && isEmpuRecord(r));
@@ -2928,7 +2932,7 @@ async function renderActivityLog(){
       ? '<div class="subtext" style="margin-top:10px; margin-bottom:0;">EMPU orders delivered: <b>'+dashEmpu.length+'</b> on the Dashboard \u00b7 <b>'+(dashEmpu.length-missingEmpu.length)+'</b> listed above under N users'
         + (missingEmpu.length ? ' \u2014 not attributed to an N user: <span class="mono">'+missingEmpu.map(r=>escapeHtml(r.orderNo)).join(', ')+'</span>' : ' \u2014 all accounted for')+'.</div>'
       : '';
-    detailBox.innerHTML = '<table><thead><tr><th>User</th><th>Order No.</th><th>Zone</th><th>Status</th><th>Time</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'+recon;
+    detailBox.innerHTML = '<table><thead><tr><th>User</th><th>Order No.</th><th>Zone</th><th>Status</th><th>Time</th>'+(canDel ? '<th></th>' : '')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table>'+recon;
   }
 
   // Scan log — every scan event for the date, all users.
@@ -3394,6 +3398,41 @@ document.getElementById('clearScansBtn').addEventListener('click', async ()=>{
   statusEl.textContent = 'Deleted '+cleared+' order'+(cleared===1?'':'s')+' from '+formatDDMMYYYY(date)+' — removed from the dashboard and all data.';
   document.getElementById('clearScansInput').value = '';
   toast('Deleted '+cleared+' order'+(cleared===1?'':'s')+' from '+formatDDMMYYYY(date)+'.');
+  refreshActivityPage();
+  if(document.getElementById('dashDate').value===date) refreshDashboard();
+  if(document.getElementById('formsDate').value===date) renderFormsList();
+  if(document.getElementById('recordsDate').value===date){ liveOrderLookup(); if(searchHasRun) runSearch(); }
+  if(document.getElementById('reportDate').value===date) refreshReportAutoFieldsOnly();
+});
+
+// Order detail by user: VJ01 / master access can delete a single order's transaction (the whole
+// record for that date, same as Clear scan activity) straight from its row.
+document.getElementById('activityOrderDetail').addEventListener('click', async (ev)=>{
+  const btn = ev.target.closest('.detail-del-btn');
+  if(!btn || !canClearScanData()) return;
+  const orderNo = btn.dataset.order;
+  const date = document.getElementById('activityDate').value || todayISO();
+  const day = await loadDay(date);
+  const rec = day ? day.records.find(r=>r.orderNo===orderNo && !r.preloaded) : null;
+  if(!rec){ toast('Order '+orderNo+' is no longer on '+formatDDMMYYYY(date)+'.'); refreshActivityPage(); return; }
+  const proceed = await confirmDialog(
+    'Delete transaction',
+    '<div>This will <b>permanently delete order '+escapeHtml(orderNo)+'</b> from <b>'+formatDDMMYYYY(date)+'</b> \u2014 the record, who scanned/delivered it, the times and the scan/trolley counts. It will also disappear from the Dashboard.</div>'
+      + '<div style="margin-top:10px;"><b>This can\u2019t be undone.</b></div>',
+    'Delete order'
+  );
+  if(!proceed) return;
+  const bk = await backupDayBeforeChange(date, 'delete transaction');
+  if(!bk.ok){ toast('Could not save a safety copy first, so nothing was changed.'); return; }
+  let removed = 0;
+  const ok = await updateDayAtomic(date, (freshDay)=>{
+    const before = freshDay.records.length;
+    freshDay.records = freshDay.records.filter(r=>!(r.orderNo===orderNo && !r.preloaded));
+    removed = before - freshDay.records.length;
+  });
+  if(!ok){ toast('Could not save \u2014 nothing was changed. Check your connection and try again.'); return; }
+  logDataChange('clear-scans', date, 'Deleted order '+orderNo+' from Order detail by user');
+  toast('Order '+orderNo+' deleted.');
   refreshActivityPage();
   if(document.getElementById('dashDate').value===date) refreshDashboard();
   if(document.getElementById('formsDate').value===date) renderFormsList();
@@ -5288,12 +5327,19 @@ window.viewEmpuQrForm = async function(){
         return;
       }
       seen.add(r.driverNo);
-      drivers.push({ driverNo:r.driverNo, zone:r.zone });
+      drivers.push({ driverNo:r.driverNo, zone:r.zone, vehicleType:r.vehicleType||'' });
     });
+    // Van / Truck set on the Zones page for drivers with no vehicle on their records
+    (day.manualDrivers||[]).forEach(m=>{
+      const d0 = drivers.find(x=>x.driverNo===m.driverNo);
+      if(d0 && !d0.vehicleType && m.vehicleType) d0.vehicleType = m.vehicleType;
+    });
+    day.records.forEach(r=>{ const d0 = drivers.find(x=>x.driverNo===r.driverNo); if(d0 && !d0.vehicleType && r.vehicleType) d0.vehicleType = r.vehicleType; });
   }
   // Drivers from that date's preload list too, so Netley can print the same form for a preload.
   (await loadPreloadOrders(date)).forEach(r=>{
-    if(r.driverNo && !seen.has(r.driverNo)){ seen.add(r.driverNo); drivers.push({ driverNo:r.driverNo, zone:r.zone }); }
+    if(r.driverNo && !seen.has(r.driverNo)){ seen.add(r.driverNo); drivers.push({ driverNo:r.driverNo, zone:r.zone, vehicleType:r.vehicleType||'' }); }
+    else if(r.driverNo && r.vehicleType){ const d0 = drivers.find(x=>x.driverNo===r.driverNo); if(d0 && !d0.vehicleType) d0.vehicleType = r.vehicleType; }
   });
   drivers.sort((a,b)=> String(a.driverNo).localeCompare(String(b.driverNo)));
 
@@ -5323,7 +5369,9 @@ window.viewEmpuQrForm = async function(){
     const code = buildZqrCode(d.driverNo, date);
     const qrId = 'empuqr_'+i;
     return '<div class="empu-qr-cell">'
-      + '<div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
+      + '<div><div class="empu-qr-driver" style="font-size:'+fontSize+'px;">'+escapeHtml(d.driverNo)+'</div>'
+      + (d.vehicleType==='Van'||d.vehicleType==='Truck' ? '<div class="empu-qr-vehicle" style="font-size:'+Math.max(11,Math.round(fontSize*0.5))+'px;">'+d.vehicleType+'</div>' : '')
+      + '</div>'
       + '<div class="empu-qr-code" id="'+qrId+'"></div>'
       + '<!--QR::'+qrId+'::'+escapeHtml(code)+'-->'
       + '</div>';
