@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Goods Outflow — Load-Out Control (3.89.0b)</title>
+<title>Goods Outflow — Load-Out Control (3.94.0b)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -521,7 +521,7 @@
     <span class="tagline">Smart Load-Out. Simplified.</span>
   </div>
   <div style="display:flex; align-items:center; gap:12px;">
-    <span class="version-tag" id="versionTagRight">3.89.0b</span>
+    <span class="version-tag" id="versionTagRight">3.94.0b</span>
     <div style="display:flex; align-items:center; gap:9px;">
       <span class="store-label" id="storeLabel"></span>
       <span class="today mono" id="todayLabel"></span>
@@ -815,7 +815,7 @@
 
     <div class="card">
       <h2>Look up by Order No.</h2>
-      <div class="subtext">Type an Order No. — matching details for the date above appear instantly.</div>
+      <div class="subtext">Type an Order No. — every record of it appears instantly, newest first. Orders are kept for 90 days.</div>
       <label class="field">
         <span class="lbl">Order No.</span>
         <input type="text" id="fOrderNoLive" placeholder="e.g. 100234" autocomplete="off"/>
@@ -1115,7 +1115,7 @@
       <div id="activityChangeLog"></div>
       <div id="activityBackupsWrap" style="display:none; margin-top:18px;">
         <h2 style="font-size:16px;">Safety copies</h2>
-        <div class="subtext">A copy of a date’s data is saved automatically just before it is re-uploaded, deleted or has scans cleared (the latest 40 are kept, and copies older than the 30-day retention are dropped). Restoring replaces that date’s current data with the copy — the current data is saved as a safety copy first. VJ01 / master access only.</div>
+        <div class="subtext">A copy of a date’s data is saved automatically just before it is re-uploaded, deleted or has scans cleared (the latest 40 are kept, and copies older than the 90-day retention are dropped). Restoring replaces that date’s current data with the copy — the current data is saved as a safety copy first. VJ01 / master access only.</div>
         <div id="activityBackups"></div>
         <div class="subtext" id="restoreStatus" style="margin-top:10px; margin-bottom:0;"></div>
       </div>
@@ -1811,7 +1811,11 @@ async function loadReportDataCached(date){
 }
 
 /* ---- Data retention: keep only the last RETENTION_DAYS calendar days ---- */
-const RETENTION_DAYS = 30; // 1 month
+const RETENTION_DAYS = 90; // 3 months of full day data (Dashboard, Activity Log, trends, backups)
+// Some features read every retained day on each use. Those are kept to the most recent 30 days so that going to
+// 90 days of retention doesn't triple the data downloaded on every scan / search; older orders come from the
+// small per-order archive instead.
+const DIRECT_LOOKUP_DAYS = 30;
 function isoDaysAgo(n){
   const d = new Date();
   d.setDate(d.getDate()-n);
@@ -1819,21 +1823,97 @@ function isoDaysAgo(n){
   const local = new Date(d.getTime()-tz*60000);
   return local.toISOString().slice(0,10);
 }
+/* ---- Order archive: Look up by Order No. reaches back ORDER_ARCHIVE_DAYS (90) ----
+   Full day files are heavy, so Look up by Order No. only reads the last DIRECT_LOOKUP_DAYS (30) of them. As soon as a day
+   is older than that, every order on it (plus its failed / not-fulfilled report entries) is copied into a small
+   per-order record, "orderidx/<orderNo>", so one order can be looked up with a single read. Reports are kept
+   for REPORT_KEEP_DAYS (90). The archive builds up from the day this version is installed — days that were
+   already removed earlier can't be recovered. */
+const ORDER_ARCHIVE_DAYS = 90; // kept deliberately modest to go easy on Firebase storage
+const REPORT_KEEP_DAYS = 90;
+const ARCHIVE_ORDER_OK = /^[A-Za-z0-9_-]{4,40}$/;
+function orderIdxPath(orderNo){ return fbSafeKey(storeKey('orderidx'))+'/'+fbSafeKey(orderNo); } // nested, so a store's whole archive is ONE top-level key
+async function loadOrderIndexEntry(orderNo){
+  if(!ARCHIVE_ORDER_OK.test(String(orderNo||''))) return null;
+  try{
+    let raw;
+    if(fbReady){ const snap = await fbDatabase.ref(orderIdxPath(orderNo)).get(); raw = snap.exists() ? snap.val() : null; }
+    else raw = await localGet(storeKey('orderidx:'+orderNo));
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ console.error('order index read failed', e); return null; }
+}
+async function saveOrderIndexEntry(orderNo, entry){
+  try{
+    const raw = JSON.stringify(entry);
+    if(fbReady){ await fbDatabase.ref(orderIdxPath(orderNo)).set(raw); return true; }
+    return await localSet(storeKey('orderidx:'+orderNo), raw) !== false;
+  }catch(e){ console.error('order index write failed', e); return false; }
+}
+async function loadArchivedDays(){
+  const raw = await storeGet(storeKey('archived'));
+  if(!raw) return [];
+  try{ return JSON.parse(raw); }catch(e){ return []; }
+}
+async function archiveDayToOrderIndex(date){
+  try{
+    const day = await loadDay(date);
+    const report = await loadReportData(date);
+    const by = {};
+    const slot = no => by[no] || (by[no] = { e:[], f:[], a:[] });
+    if(day && Array.isArray(day.records)){
+      day.records.forEach(r=>{ if(r && r.orderNo && ARCHIVE_ORDER_OK.test(String(r.orderNo))) slot(String(r.orderNo)).e.push(Object.assign({}, r, { date })); });
+    }
+    if(report){
+      if(report.repFailed==='yes') parseUnfulfilled(report.repUnfulfilled).forEach(u=>{ if(ARCHIVE_ORDER_OK.test(String(u.orderNo))) slot(String(u.orderNo)).f.push(Object.assign({ returnedOn:date }, u)); });
+      if(report.repAllFulfilled==='no') parseAfOrders(report.repAfOrders).forEach(u=>{ if(ARCHIVE_ORDER_OK.test(String(u.orderNo))) slot(String(u.orderNo)).a.push(Object.assign({ reportDate:date }, u)); });
+    }
+    const keepFrom = isoDaysAgo(ORDER_ARCHIVE_DAYS-1);
+    const nos = Object.keys(by);
+    let allOk = true;
+    for(let i=0; i<nos.length; i+=10){
+      await Promise.all(nos.slice(i, i+10).map(async no=>{
+        const cur = (await loadOrderIndexEntry(no)) || { v:1, e:[], f:[], a:[] };
+        // Replace anything already stored for this date (so re-running is harmless) and drop entries older than a year.
+        const merge = (arr, add, key)=> (arr||[]).filter(x=>x[key]!==date).concat(add).filter(x=>String(x[key]||'')>=keepFrom);
+        cur.e = merge(cur.e, by[no].e, 'date');
+        cur.f = merge(cur.f, by[no].f, 'returnedOn');
+        cur.a = merge(cur.a, by[no].a, 'reportDate');
+        if(!(await saveOrderIndexEntry(no, cur))) allOk = false;
+      }));
+    }
+    return allOk;
+  }catch(e){ console.error('archive failed for '+date, e); return false; }
+}
 async function cleanupOldData(){
-  const cutoff = isoDaysAgo(RETENTION_DAYS-1); // e.g. today, today-1, today-2 for RETENTION_DAYS=3
+  const cutoff = isoDaysAgo(RETENTION_DAYS-1); // days older than this are removed
+  const archiveBefore = isoDaysAgo(DIRECT_LOOKUP_DAYS-1); // days older than this are copied into the per-order archive
   const dates = await loadDatesIndex();
   const keep = [];
   let removedAny = false;
+  let archived = null, archivedChanged = false;
   for(const d of dates){
+    if(d < archiveBefore){
+      if(archived===null) archived = new Set(await loadArchivedDays());
+      if(!archived.has(d)){
+        // Copy the day's orders into the per-order archive; if that can't be saved, never delete the day — retry next time.
+        const ok = await archiveDayToOrderIndex(d);
+        if(ok){ archived.add(d); archivedChanged = true; }
+        else{ keep.push(d); continue; }
+      }
+    }
     if(d >= cutoff){
       keep.push(d);
     }else{
       await storeDelete(storeKey('day:'+d));
-      await storeDelete(storeKey('report:'+d));
       removedAny = true;
     }
   }
-  if(removedAny) await saveDatesIndex(keep);
+  if(archivedChanged) await storeSet(storeKey('archived'), JSON.stringify([...archived].sort().slice(-(ORDER_ARCHIVE_DAYS+30))));
+  if(removedAny){
+    await saveDatesIndex(keep);
+    // Reports are small and kept for REPORT_KEEP_DAYS; clear the few days that have just passed that limit.
+    for(let i=0; i<14; i++) await storeDelete(storeKey('report:'+isoDaysAgo(REPORT_KEEP_DAYS+i)));
+  }
   try{ await pruneOldBackups(cutoff); }catch(e){ console.error('backup prune failed', e); }
 }
 
@@ -2659,7 +2739,8 @@ async function renderMyActivityToday(){
 
 async function renderUploadHistory(){
   const box = document.getElementById('activityUploadHistory');
-  const dates = await loadDatesIndex();
+  const uhFrom = isoDaysAgo(DIRECT_LOOKUP_DAYS-1); // whole day files are read here, so only the last 30 days are listed
+  const dates = (await loadDatesIndex()).filter(d=>d>=uhFrom);
   const days = await Promise.all(dates.map(d=>loadDay(d)));
   const entries = [];
   days.forEach((day, i)=>{
@@ -4162,7 +4243,8 @@ const ZONE_OPTIONS = ['1','2','3','4','5','6','7','A','B','C','D','E1','E2','E3'
 const VEHICLE_TYPE_HISTORY_START = '2026-09-25';
 
 async function buildVehicleTypeHistoryMap(beforeDate){
-  const dates = (await loadDatesIndex()).filter(d => d >= VEHICLE_TYPE_HISTORY_START && d < beforeDate).sort();
+  const vFrom = isoDaysAgo(DIRECT_LOOKUP_DAYS-1); // each driver's most recent type — the last 30 days is plenty
+  const dates = (await loadDatesIndex()).filter(d => d >= VEHICLE_TYPE_HISTORY_START && d >= vFrom && d < beforeDate).sort();
   const map = {};
   // Oldest first, so each later date's assignment overwrites earlier ones —
   // the map ends up holding each driver's MOST RECENT prior vehicle type.
@@ -6426,7 +6508,8 @@ function extractOrderNoFromScan(raw){
    this order number — this is what catches a rebooked order (same order no.
    reused for a new delivery attempt after a prior return). */
 async function findPriorDeliveryDate(orderNo, beforeDate){
-  const dates = await loadDatesIndex();
+  const from = isoDaysAgo(DIRECT_LOOKUP_DAYS-1); // sequential reads on every unmatched scan, so kept to the last 30 days
+  const dates = (await loadDatesIndex()).filter(d=>d>=from);
   for(const d of dates){
     if(d >= beforeDate) continue;
     const dObj = await loadDay(d);
@@ -6952,10 +7035,11 @@ async function liveOrderLookup(){
   if(!val){ resultEl.innerHTML = ''; return; }
 
   // loadDatesIndex() only ever holds dates within the retention window, so
-  // this is already naturally bounded to the last RETENTION_DAYS (30) —
+  // this is bounded to the last DIRECT_LOOKUP_DAYS (30) —
   // fetched in parallel since a 9-digit order number can be typed quickly
   // and this runs on every keystroke.
-  const dates = await loadDatesIndex();
+  const directFrom = isoDaysAgo(DIRECT_LOOKUP_DAYS-1);
+  const dates = (await loadDatesIndex()).filter(d=>d>=directFrom); // older days are in the per-order archive
   if(myToken !== liveOrderLookupToken) return;
   const days = await Promise.all(dates.map(d=>loadDay(d)));
   if(myToken !== liveOrderLookupToken) return; // a newer keystroke superseded this lookup
@@ -6972,7 +7056,7 @@ async function liveOrderLookup(){
   // card, with their scan history, so they aren't listed a second time.
   // Plain calendar arithmetic (no time-zone shift) — tomorrow back through the retention window.
   const [ty,tm,td] = todayISO().split('-').map(Number);
-  const preDates = []; for(let i=-1; i<=RETENTION_DAYS; i++) preDates.push(new Date(Date.UTC(ty, tm-1, td-i)).toISOString().slice(0,10));
+  const preDates = []; for(let i=-1; i<=DIRECT_LOOKUP_DAYS; i++) preDates.push(new Date(Date.UTC(ty, tm-1, td-i)).toISOString().slice(0,10));
   const preLists = await Promise.all(preDates.map(d=>loadPreloadOrdersCached(d)));
   if(myToken !== liveOrderLookupToken) return;
   preDates.forEach((d,i)=>{
@@ -6986,6 +7070,13 @@ async function liveOrderLookup(){
   // daily report of the day they came back — and are not on that day's
   // manifest — so every day's report is checked for this order number.
   const vkey = extractOrderNoFromScan(val);
+  // Older than the 30-day window: the per-order archive (one read) holds the manifest records and report entries.
+  const archiveEntry = await loadOrderIndexEntry(vkey);
+  if(myToken !== liveOrderLookupToken) return;
+  if(archiveEntry){
+    const liveDates = new Set(dates);
+    (archiveEntry.e||[]).filter(e=>!liveDates.has(e.date) && (e.orderNo===val || e.orderNo===vkey)).forEach(e=>matches.push(Object.assign({}, e, { archived:true })));
+  }
   const reportDates = [...new Set([...dates, todayISO()])].sort().reverse();
   const reportsList = await Promise.all(reportDates.map(d=>loadReportDataCached(d)));
   if(myToken !== liveOrderLookupToken) return;
@@ -6995,6 +7086,10 @@ async function liveOrderLookup(){
     if(r.repFailed!=='yes') return;
     parseUnfulfilled(r.repUnfulfilled).forEach(u=>{ if(u.orderNo===vkey) failedHits.push(Object.assign({ returnedOn:d }, u)); });
   });
+  if(archiveEntry){
+    const rdSet = new Set(reportDates);
+    (archiveEntry.f||[]).filter(x=>!rdSet.has(x.returnedOn)).forEach(x=>failedHits.push(Object.assign({}, x)));
+  }
   // "All Fulfilled = No" orders (not fulfilled, with their reasons) — amber, to tell them from red failed orders.
   const afHits = [];
   reportDates.forEach((d,i)=>{
@@ -7002,6 +7097,10 @@ async function liveOrderLookup(){
     if(r.repAllFulfilled!=='no') return;
     parseAfOrders(r.repAfOrders).forEach(u=>{ if(u.orderNo===vkey) afHits.push(Object.assign({ reportDate:d }, u)); });
   });
+  if(archiveEntry){
+    const rdSet = new Set(reportDates);
+    (archiveEntry.a||[]).filter(x=>!rdSet.has(x.reportDate)).forEach(x=>afHits.push(Object.assign({}, x)));
+  }
   const afItems = afHits.map(h=>({ date:h.reportDate, rank:2, html:
     '<div style="margin-top:14px; border:1.5px solid var(--warning); background:var(--warning-soft); border-radius:8px; padding:14px 16px;">'
     + '<div style="color:var(--warning); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--warning); color:#fff; margin-left:6px;">Not fulfilled</span></div>'
@@ -7012,7 +7111,8 @@ async function liveOrderLookup(){
         + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
     + '<div style="color:var(--warning); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(afReasonsLabel(h.reasons, h.other))+'</b></div>'
     + '</div>' }));
-  const failedItems = failedHits.map(h=>({ date:h.returnedOn, rank:1, html:
+  // Oldest failure is #1, the next is #2, and so on — each card shows which failure it is, not the total.
+  const failedItems = failedHits.slice().sort((a,b)=>(a.returnedOn||'').localeCompare(b.returnedOn||'')).map((h,idx)=>({ date:h.returnedOn, rank:1, html:
     '<div style="margin-top:14px; border:1.5px solid var(--danger); background:var(--danger-soft); border-radius:8px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--danger);">'
     + '<div style="min-width:0;"><div style="color:var(--danger); font-weight:700; margin-bottom:6px;">Order <span class="mono">'+escapeHtml(h.orderNo)+'</span> <span class="badge" style="background:var(--danger); color:#fff; margin-left:6px;">Failed order</span></div>'
     + '<div style="color:var(--danger); font-size:14px;">Brought back <b>'+escapeHtml(formatDDMMYYYY(h.returnedOn))+'</b>'
@@ -7023,11 +7123,11 @@ async function liveOrderLookup(){
         + (h.suburb ? ' \u00b7 <b>'+escapeHtml(h.suburb)+'</b>' : '') + '</div>' : '')
     + '<div style="color:var(--danger); font-size:14px; margin-top:6px;">Reason: <b>'+escapeHtml(reasonsText(h.reasons))+'</b></div>'
     + '<div style="color:var(--danger); font-size:14px; margin-top:4px;">Case no. <b class="mono">'+escapeHtml(h.caseNo||'\u2014')+'</b> \u00b7 Notified CR: <b>'+notifiedCRLabel(h.notifiedCR)+'</b></div></div>'
-    + failedCountBadge(failedHits.length)
+    + failedCountBadge(idx+1)
     + '</div>' }));
 
   if(!matches.length && !failedHits.length && !afHits.length){
-    resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">No order matching "'+escapeHtml(val)+'" found in the last '+RETENTION_DAYS+' days.</div>';
+    resultEl.innerHTML = '<div class="subtext" style="margin-top:14px;">No order matching "'+escapeHtml(val)+'" found in the last '+ORDER_ARCHIVE_DAYS+' days of records.</div>';
     return;
   }
   
@@ -7111,6 +7211,7 @@ function failedCountBadge(n){
     + '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">time'+(n===1?'':'s')+' failed</div></div>';
 }
 let failedPeriod = 'day';
+let failedReason = ''; // '' = all reasons; otherwise only failed orders with this reason are listed
 function failedRangeDates(anchor, period){
   const [y,m,d] = anchor.split('-').map(Number);
   const iso = t => new Date(t).toISOString().slice(0,10);
@@ -7123,6 +7224,20 @@ function failedRangeDates(anchor, period){
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     return Array.from({length:last}, (_,i)=>iso(Date.UTC(y, m-1, i+1)));
   }
+  if(period==='year'){
+    // Jan 1 up to today (or Dec 31 for a past year), but never earlier than the retention window — reports
+    // older than that have already been removed, so asking Firebase for them would just be wasted calls.
+    const today = todayISO();
+    const earliest = isoDaysAgo(REPORT_KEEP_DAYS-1);
+    const out = [];
+    const end = Date.UTC(y, 11, 31);
+    for(let t=Date.UTC(y,0,1); t<=end; t+=864e5){
+      const ds = iso(t);
+      if(ds > today) break;
+      if(ds >= earliest) out.push(ds);
+    }
+    return out.length ? out : [anchor];
+  }
   return [anchor];
 }
 async function renderFailedSearch(resultsEl){
@@ -7131,7 +7246,8 @@ async function renderFailedSearch(resultsEl){
   const sub = document.getElementById('fSuburb').value.trim().toLowerCase();
   const drv = document.getElementById('fDriver').value.trim().toLowerCase();
   const zn = document.getElementById('fZone').value.trim().toLowerCase();
-  const reports = await Promise.all(dates.map(d=>loadReportDataCached(d)));
+  const reports = [];
+  for(let i=0; i<dates.length; i+=60) reports.push(...await Promise.all(dates.slice(i, i+60).map(d=>loadReportDataCached(d)))); // chunked: up to ~90 small reads
   if(statusFilter!=='failed') return; // the filter changed while loading
   const rows = [];
   dates.forEach((d,i)=>{
@@ -7145,40 +7261,60 @@ async function renderFailedSearch(resultsEl){
     });
   });
   rows.sort((a,b)=> b.returnedOn.localeCompare(a.returnedOn) || a.orderNo.localeCompare(b.orderNo));
+  const periodRows = rows.slice(); // everything in the period, before any reason filter — the reason chips always count these
   // How many times each order has failed — across every retained day, not just this period.
   const [ty,tm,td] = todayISO().split('-').map(Number);
   const allDates = new Set(dates);
   for(let i=0; i<=RETENTION_DAYS; i++) allDates.add(new Date(Date.UTC(ty, tm-1, td-i)).toISOString().slice(0,10));
   const allList = [...allDates];
-  const allReports = await Promise.all(allList.map(d=>loadReportDataCached(d)));
+  const allReports = [];
+  for(let i=0; i<allList.length; i+=60) allReports.push(...await Promise.all(allList.slice(i, i+60).map(d=>loadReportDataCached(d))));
   if(statusFilter!=='failed') return;
-  const failCount = {};
-  allList.forEach((d,i)=>{
-    const r = allReports[i] || {};
-    if(r.repFailed!=='yes') return;
-    parseUnfulfilled(r.repUnfulfilled).forEach(u=>{ failCount[u.orderNo] = (failCount[u.orderNo]||0) + 1; });
+  // Which failure each card is for its order (1st, 2nd, …), counted by the date it was brought back.
+  const failOrdinal = {};
+  const runCount = {};
+  allList.map((d,i)=>({ d, r:allReports[i]||{} })).sort((a,b)=>a.d.localeCompare(b.d)).forEach(x=>{
+    if(x.r.repFailed!=='yes') return;
+    parseUnfulfilled(x.r.repUnfulfilled).forEach(u=>{
+      runCount[u.orderNo] = (runCount[u.orderNo]||0) + 1;
+      failOrdinal[u.orderNo+'|'+x.d] = runCount[u.orderNo];
+    });
   });
   const rangeLabel = failedPeriod==='day' ? formatDDMMYYYY(anchor)
     : failedPeriod==='week' ? formatDDMMYYYY(dates[0])+' \u2013 '+formatDDMMYYYY(dates[6])
+    : failedPeriod==='year' ? anchor.slice(0,4)
     : new Date(Date.UTC(Number(anchor.slice(0,4)), Number(anchor.slice(5,7))-1, 1)).toLocaleDateString([], {month:'long', year:'numeric', timeZone:'UTC'});
   const reasonCounts = {};
-  rows.forEach(u=>(u.reasons||[]).forEach(x=>{ reasonCounts[x] = (reasonCounts[x]||0) + 1; }));
+  periodRows.forEach(u=>(u.reasons||[]).forEach(x=>{ reasonCounts[x] = (reasonCounts[x]||0) + 1; }));
+  if(failedReason && !reasonCounts[failedReason]) failedReason = ''; // that reason doesn't occur in this period
+  const listRows = failedReason ? periodRows.filter(u=>(u.reasons||[]).includes(failedReason)) : periodRows;
   const toggle = '<div class="btn-row" style="margin:0 0 10px;">'
-    + [['day','Day'],['week','Week'],['month','Month']].map(([k,l])=>'<button type="button" class="btn btn-ghost failed-period-btn'+(failedPeriod===k?' active':'')+'" data-failed-period="'+k+'">'+l+'</button>').join('')
+    + [['day','Day'],['week','Week'],['month','Month'],['year','Year']].map(([k,l])=>'<button type="button" class="btn btn-ghost failed-period-btn'+(failedPeriod===k?' active':'')+'" data-failed-period="'+k+'">'+l+'</button>').join('')
     + '</div>';
-  const summary = '<div style="margin:0 0 10px;"><b style="color:var(--danger); font-size:18px;">'+rows.length+'</b> failed order'+(rows.length===1?'':'s')+' <span class="subtext" style="margin:0;">\u00b7 '+escapeHtml(rangeLabel)+'</span></div>'
-    + (rows.length ? '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px;">'
-        + Object.keys(reasonCounts).sort((a,b)=>reasonCounts[b]-reasonCounts[a]).map(k=>'<span class="badge" style="background:var(--danger-soft); color:var(--danger);">'+escapeHtml(k)+' \u00b7 '+reasonCounts[k]+'</span>').join('')+'</div>' : '');
+  const yearNote = failedPeriod==='year'
+    ? '<div class="subtext" style="margin:0 0 10px;">Reports are kept for '+REPORT_KEEP_DAYS+' days. Days removed before this was introduced (the old 30-day limit) can\u2019t be included.</div>' : '';
+  const summary = '<div style="margin:0 0 10px;"><b style="color:var(--danger); font-size:18px;">'+listRows.length+'</b> failed order'+(listRows.length===1?'':'s')
+    + (failedReason ? ' <span class="subtext" style="margin:0;">\u00b7 '+escapeHtml(failedReason)+'</span>' : '')
+    + ' <span class="subtext" style="margin:0;">\u00b7 '+escapeHtml(rangeLabel)+'</span></div>'
+    + yearNote
+    + (periodRows.length ? '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 4px;">'
+        + Object.keys(reasonCounts).sort((a,b)=>reasonCounts[b]-reasonCounts[a]).map(k=>{
+            const on = failedReason===k;
+            return '<button type="button" class="badge failed-reason-chip" data-failed-reason="'+escapeHtml(k)+'" aria-pressed="'+(on?'true':'false')+'" style="border:1.5px solid var(--danger); cursor:pointer; font:inherit; font-size:12px; font-weight:700; '+(on ? 'background:var(--danger); color:#fff;' : 'background:var(--danger-soft); color:var(--danger);')+'">'+escapeHtml(k)+' \u00b7 '+reasonCounts[k]+'</button>';
+          }).join('')
+        + (failedReason ? '<button type="button" class="badge failed-reason-chip" data-failed-reason="" style="border:1.5px solid var(--line); cursor:pointer; font:inherit; font-size:12px; font-weight:700; background:var(--surface); color:var(--ink-soft);">\u2715 Show all</button>' : '')
+        + '</div>'
+        + '<div class="subtext" style="margin:0 0 12px; font-size:12px;">Tap a reason to list only those orders.</div>' : '');
   let body = '';
-  if(!rows.length){
-    body = '<div class="subtext">No failed orders recorded for this '+failedPeriod+'.</div>';
+  if(!listRows.length){
+    body = '<div class="subtext">No failed orders recorded for this '+failedPeriod+(failedReason ? ' with the reason \u201c'+escapeHtml(failedReason)+'\u201d' : '')+'.</div>';
   }else{
     let lastDate = '';
-    body = rows.map(u=>{
+    body = listRows.map(u=>{
       let head = '';
       if(failedPeriod!=='day' && u.returnedOn!==lastDate){
         lastDate = u.returnedOn;
-        const n = rows.filter(x=>x.returnedOn===u.returnedOn).length;
+        const n = listRows.filter(x=>x.returnedOn===u.returnedOn).length;
         head = '<div style="margin:12px 0 6px; font-weight:700;">'+escapeHtml(new Date(u.returnedOn+'T00:00:00Z').toLocaleDateString([], {weekday:'short', timeZone:'UTC'}))+' '+escapeHtml(formatDDMM(u.returnedOn))+' <span class="subtext" style="margin:0; font-weight:400;">\u00b7 '+n+' failed</span></div>';
       }
       return head + '<div style="border:1.5px solid var(--danger); background:var(--danger-soft); border-radius:8px; padding:10px 14px; margin-bottom:8px; color:var(--danger); display:flex; align-items:center; justify-content:space-between; gap:12px;">'
@@ -7191,13 +7327,20 @@ async function renderFailedSearch(resultsEl){
             + (u.suburb ? ' \u00b7 <b>'+escapeHtml(u.suburb)+'</b>' : '') + '</div>' : '')
         + '<div style="font-size:14px; margin-top:4px;">Reason: <b>'+escapeHtml(reasonsText(u.reasons))+'</b></div>'
         + '<div style="font-size:14px; margin-top:2px;">Case no. <b class="mono">'+escapeHtml(u.caseNo||'\u2014')+'</b> \u00b7 Notified CR: <b>'+notifiedCRLabel(u.notifiedCR)+'</b></div></div>'
-        + failedCountBadge(failCount[u.orderNo] || 1) + '</div>';
+        + failedCountBadge(failOrdinal[u.orderNo+'|'+u.returnedOn] || 1) + '</div>';
     }).join('');
   }
   resultsEl.innerHTML = toggle + summary + body;
   resultsEl.dataset.hasResults = '1';
 }
 document.getElementById('searchResults').addEventListener('click', e=>{
+  const chip = e.target.closest('[data-failed-reason]');
+  if(chip){
+    const r = chip.dataset.failedReason;
+    failedReason = (failedReason===r) ? '' : r; // tapping the active reason again clears it
+    runSearch();
+    return;
+  }
   const b = e.target.closest('[data-failed-period]');
   if(!b) return;
   failedPeriod = b.dataset.failedPeriod;
